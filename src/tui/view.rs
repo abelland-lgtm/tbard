@@ -26,6 +26,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     match app.view {
         View::Library => library(f, app, main),
         View::Player => player(f, app, main),
+        View::Settings => settings(f, app, main),
     }
     if now_playing {
         if let Some(p) = &app.player {
@@ -50,8 +51,12 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     f.render_widget(Line::from(msg), status);
 
     let keys = match (app.searching, &app.view) {
+        _ if app.editing.is_some() => "escribe la ruta (~/… o /…) · ⏎ guardar · esc cancelar",
         (true, _) => "escribe para buscar · ⏎ aceptar · esc borrar",
-        (_, View::Library) => "/ buscar · f filtro · d descargar · ⏎ reproducir · r actualizar · tab reproductor · q salir",
+        (_, View::Library) => {
+            "/ buscar · f filtro · d descargar · ⏎ reproducir · r actualizar · c configuración · tab reproductor · q salir"
+        }
+        (_, View::Settings) => "⏎ cambiar · esc volver · q salir",
         (_, View::Player) => {
             "espacio pausa · ←/→ 30 s · [/] capítulo · +/- velocidad · 9/0 volumen · t temporizador · s parar · tab biblioteca · q salir"
         }
@@ -229,6 +234,22 @@ fn player(f: &mut Frame, app: &mut App, area: Rect) {
 
     let asin = p.session.asin.clone();
     render_cover(f, &mut app.cover, &asin, cover_area);
+}
+
+fn settings(f: &mut Frame, app: &App, area: Rect) {
+    let t = &app.theme;
+    let value = match &app.editing {
+        Some(buf) => Span::styled(format!("{buf}▏"), Style::new().fg(t.tertiary)),
+        None => Span::styled(app.paths.display(&app.paths.library), Style::new().fg(t.secondary)),
+    };
+    let lines = vec![
+        Line::from(vec![Span::raw("▸ Carpeta de descargas   ").bold(), value]),
+        Line::styled(
+            "  Las descargas nuevas van aquí; los libros ya descargados se quedan donde están.",
+            Style::new().fg(t.on_surface_variant),
+        ),
+    ];
+    f.render_widget(Paragraph::new(lines).block(block(t, " configuración ")), area);
 }
 
 fn render_cover(f: &mut Frame, cover: &mut Option<(String, StatefulProtocol)>, asin: &str, area: Rect) {

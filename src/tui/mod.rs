@@ -46,6 +46,7 @@ enum Dl {
 enum View {
     Library,
     Player,
+    Settings,
 }
 
 /// Elección pendiente entre la posición local y la de Audible.
@@ -69,6 +70,8 @@ pub struct App {
     filter: Filter,
     query: String,
     searching: bool,
+    /// Texto de la opción de configuración que se está editando.
+    editing: Option<String>,
     downloads: HashMap<String, Dl>,
     download_slot: Arc<Semaphore>,
     /// Libro a reproducir en cuanto termine su descarga.
@@ -107,6 +110,7 @@ pub async fn run(paths: Paths) -> Result<()> {
         filter: Filter::All,
         query: String::new(),
         searching: false,
+        editing: None,
         downloads: HashMap::new(),
         download_slot: Arc::new(Semaphore::new(1)),
         play_after: None,
@@ -456,6 +460,31 @@ impl App {
             }
             return;
         }
+        if let Some(buf) = &mut self.editing {
+            match key.code {
+                KeyCode::Esc => self.editing = None,
+                KeyCode::Enter => {
+                    let input = std::mem::take(buf);
+                    match self.paths.set_library(&input) {
+                        Ok(()) => {
+                            self.editing = None;
+                            let dir = self.paths.display(&self.paths.library);
+                            self.say(format!("las descargas nuevas irán a {dir}"));
+                        }
+                        Err(e) => {
+                            self.editing = Some(input);
+                            self.say(format!("{e:#}"));
+                        }
+                    }
+                }
+                KeyCode::Backspace => {
+                    buf.pop();
+                }
+                KeyCode::Char(c) => buf.push(c),
+                _ => {}
+            }
+            return;
+        }
         if self.searching {
             match key.code {
                 KeyCode::Esc => {
@@ -480,6 +509,10 @@ impl App {
                 Ok(())
             }
             View::Player => self.player_key(key).await,
+            View::Settings => {
+                self.settings_key(key);
+                Ok(())
+            }
         };
         if let Err(e) = res {
             self.say(format!("mpv: {e}"));
@@ -521,6 +554,7 @@ impl App {
                     self.play(asin);
                 }
             }
+            KeyCode::Char('c') => self.view = View::Settings,
             KeyCode::Tab if self.player.is_some() => {
                 self.view = View::Player;
                 self.ensure_cover();
@@ -528,6 +562,15 @@ impl App {
             _ => return,
         }
         self.ensure_cover();
+    }
+
+    fn settings_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Char('q') => self.quit = true,
+            KeyCode::Esc | KeyCode::Tab | KeyCode::Char('c') => self.view = View::Library,
+            KeyCode::Enter => self.editing = Some(self.paths.display(&self.paths.library)),
+            _ => {}
+        }
     }
 
     async fn player_key(&mut self, key: KeyEvent) -> Result<()> {

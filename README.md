@@ -25,7 +25,12 @@ tbard sync                       # enviar posiciones pendientes
 | `⏎` | reproducir | `+` / `-` | velocidad |
 | `r` | actualizar | `9` / `0` | volumen |
 | `tab` | ir al reproductor | `t` | temporizador |
-| `q` | salir | `s` / `tab` | parar / biblioteca |
+| `c` | configuración | `s` / `tab` | parar / biblioteca |
+| `q` | salir | `q` | salir |
+
+En **configuración** (`c`) se elige la carpeta de descargas: ⏎ para editarla,
+⏎ para guardar. Se guarda en `config.toml`; los libros ya descargados se
+quedan donde estaban.
 
 ## Sincronización
 
@@ -41,7 +46,7 @@ tbard sync                       # enviar posiciones pendientes
 |---|---|
 | `~/Audiobooks/<autor>/<título>/` | un `.m4b` por capítulo + `chapters.json` + portada |
 | `~/.local/share/tbard/` | `auth.json` (0600) y `tbard.db` (SQLite) |
-| `~/.config/tbard/config.toml` | `library_dir = "~/Audiobooks"` |
+| `~/.config/tbard/config.toml` | `library_dir = "~/Audiobooks"` (lo escribe la TUI, o home-manager si se usa `settings`) |
 | `~/.config/tbard/colors.toml` | colores (plantilla de Noctalia, se recarga en vivo) |
 | `~/.local/state/tbard/tbard.log` | log (`TBARD_LOG=debug` para más detalle) |
 
