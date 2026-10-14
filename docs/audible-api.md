@@ -41,7 +41,7 @@ does (see below).
    verifier returns `bearer` tokens, `mac_dms` (`adp_token`,
    `device_private_key`), `device_info` and `customer_info`.
 
-## Device deregistration (implemented, not yet tested on a real account)
+## Device deregistration ✅ confirmed
 
 1. `POST https://api.amazon.<tld>/auth/token` (form: `source_token=<refresh_token>`,
    `source_token_type=refresh_token`, `requested_token_type=access_token`,
