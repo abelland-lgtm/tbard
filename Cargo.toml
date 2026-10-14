@@ -6,6 +6,7 @@ license = "GPL-3.0-or-later"
 
 [dependencies]
 aes = "0.9.3"
+aes-gcm = "0.11.1"
 anyhow = "1.0.104"
 base64 = "0.23.1"
 cbc = "0.2.1"
@@ -16,6 +17,7 @@ futures-util = "0.3.34"
 fuzzy-matcher = "0.3.7"
 hex = "0.4.3"
 image = { version = "0.25.10", default-features = false, features = ["jpeg"] }
+keyring = "4.2.0"
 open = "5.4.4"
 rand = "0.10.3"
 ratatui = "0.30.2"

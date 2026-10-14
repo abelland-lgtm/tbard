@@ -147,6 +147,33 @@ pub async fn finish(http: &reqwest::Client, p: &Pending, redirect: &str) -> Resu
     })
 }
 
+/// Removes this device from the Amazon account (the inverse of `finish`).
+pub async fn deregister(http: &reqwest::Client, auth: &Auth) -> Result<()> {
+    let tld = auth.tld();
+    let token: Value = http
+        .post(format!("https://api.amazon.{tld}/auth/token"))
+        .form(&[
+            ("app_name", "Audible"),
+            ("app_version", "3.56.2"),
+            ("source_token", auth.refresh_token.as_str()),
+            ("requested_token_type", "access_token"),
+            ("source_token_type", "refresh_token"),
+        ])
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let access = token["access_token"].as_str().context("no access token in the response")?;
+    http.post(format!("https://api.amazon.{tld}/auth/deregister"))
+        .bearer_auth(access)
+        .json(&json!({ "deregister_all_existing_accounts": false }))
+        .send()
+        .await?
+        .error_for_status()?;
+    Ok(())
+}
+
 /// Solo para desarrollo: reutiliza un auth file de `audible quickstart` (sin cifrar).
 pub fn import(from: &Path) -> Result<Auth> {
     Auth::load(from).context("auth file de audible-cli ilegible (¿está cifrado?)")

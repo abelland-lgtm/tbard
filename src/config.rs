@@ -87,10 +87,6 @@ impl Paths {
         self.config.join("config.toml")
     }
 
-    pub fn auth(&self) -> PathBuf {
-        self.data.join("auth.json")
-    }
-
     pub fn db(&self) -> PathBuf {
         self.data.join("tbard.db")
     }

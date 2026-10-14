@@ -46,8 +46,10 @@ async fn fetch_once(client: &Client, url: &str, dest: &Path, progress: &mut impl
         .get(url)
         .header(reqwest::header::RANGE, format!("bytes={have}-"))
         .send()
-        .await?
-        .error_for_status()?;
+        .await
+        .and_then(reqwest::Response::error_for_status)
+        // The URL is a signed CDN link: keep it out of errors and logs.
+        .map_err(reqwest::Error::without_url)?;
     // 206 = el servidor respeta el Range; 200 = empieza de cero.
     let resumed = res.status() == reqwest::StatusCode::PARTIAL_CONTENT;
     let mut done = if resumed { have } else { 0 };
@@ -61,7 +63,7 @@ async fn fetch_once(client: &Client, url: &str, dest: &Path, progress: &mut impl
         .await?;
     let mut body = res.bytes_stream();
     while let Some(chunk) = body.next().await {
-        let chunk = chunk?;
+        let chunk = chunk.map_err(reqwest::Error::without_url)?;
         out.write_all(&chunk).await?;
         done += chunk.len() as u64;
         progress(done, total);

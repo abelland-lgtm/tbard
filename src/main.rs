@@ -3,6 +3,7 @@ mod config;
 mod db;
 mod download;
 mod player;
+mod secret;
 mod session;
 mod sync;
 mod tui;
@@ -48,6 +49,8 @@ enum Cmd {
     },
     /// Envía las posiciones pendientes.
     Sync,
+    /// Removes this device from your Amazon account and deletes the saved credentials.
+    Logout,
     /// Checks the installation: external programs, file locations and session.
     Doctor,
 }
@@ -63,9 +66,13 @@ async fn main() -> Result<()> {
         Some(Cmd::Library) => {
             let (client, db) = open(&paths)?;
             refresh(&client, &db).await?;
+            let mut out = std::io::stdout().lock();
             for b in db.search("")? {
                 let mark = if b.path.is_some() { "●" } else { " " };
-                println!("{mark} {} — {} [{}]", b.title, b.authors, hms(b.runtime_ms));
+                // Stop quietly when the reader goes away (`tbard library | head`).
+                if writeln!(out, "{mark} {} — {} [{}]", b.title, b.authors, hms(b.runtime_ms)).is_err() {
+                    break;
+                }
             }
             Ok(())
         }
@@ -78,6 +85,7 @@ async fn main() -> Result<()> {
         }
         Some(Cmd::Play { query }) => cmd_play(&paths, &query.join(" ")).await,
         Some(Cmd::Doctor) => cmd_doctor(&paths),
+        Some(Cmd::Logout) => cmd_logout(&paths).await,
         Some(Cmd::Sync) => {
             let (client, db) = open(&paths)?;
             let left = sync::flush(&client, &db).await?;
@@ -137,9 +145,13 @@ fn cmd_doctor(paths: &Paths) -> Result<()> {
         }
         Err(e) => check(false, "ffmpeg", e.to_string()),
     }
-    match audible::auth::Auth::load(&paths.auth()) {
-        Ok(a) => check(true, "session", format!("{} (store: {})", a.customer_info.name, a.locale_code)),
-        Err(_) => check(false, "session", "not logged in: run `tbard login`".into()),
+    match secret::load(&paths.data, &secret::OsKeychain) {
+        Ok((a, protection)) => {
+            check(true, "session", format!("{} (store: {})", a.customer_info.name, a.locale_code));
+            let ok = protection == secret::Protection::Keychain;
+            check(ok, "secrets", PROTECTION_NOTE[usize::from(!ok)].into());
+        }
+        Err(e) => check(false, "session", format!("{e:#}")),
     }
     if problems > 0 {
         bail!("{problems} problem(s) found");
@@ -148,7 +160,11 @@ fn cmd_doctor(paths: &Paths) -> Result<()> {
 }
 
 fn open(paths: &Paths) -> Result<(Client, Db)> {
-    Ok((Client::new(paths.auth())?, Db::open(&paths.db())?))
+    let client = Client::open(&paths.data)?;
+    if client.protection != secret::Protection::Keychain {
+        eprintln!("warning: {}", PROTECTION_NOTE[1]);
+    }
+    Ok((client, Db::open(&paths.db())?))
 }
 
 async fn refresh(client: &Client, db: &Db) -> Result<()> {
@@ -173,8 +189,31 @@ async fn cmd_login(paths: &Paths, locale: &str, import: Option<PathBuf>) -> Resu
             login::finish(&reqwest::Client::new(), &pending, &redirect).await?
         }
     };
-    auth.save(&paths.auth())?;
-    println!("Sesión guardada en {}", paths.auth().display());
+    let protection = secret::save(&paths.data, &auth, &secret::OsKeychain)?;
+    println!("Logged in. Credentials saved in {}", paths.display(&paths.data));
+    println!("{}", PROTECTION_NOTE[usize::from(protection != secret::Protection::Keychain)]);
+    Ok(())
+}
+
+/// How the credentials are protected: [keychain, file only].
+const PROTECTION_NOTE: [&str; 2] = [
+    "encrypted; the key is in the system keychain",
+    "no system keychain available: stored unencrypted, readable only by your user",
+];
+
+async fn cmd_logout(paths: &Paths) -> Result<()> {
+    let keys = secret::OsKeychain;
+    match secret::load(&paths.data, &keys) {
+        Ok((auth, _)) => match login::deregister(&reqwest::Client::new(), &auth).await {
+            Ok(()) => println!("This device was removed from your Amazon account."),
+            Err(e) => eprintln!(
+                "Could not remove this device from your Amazon account ({e:#}).\nRemove it under Amazon > Account > Content and Devices > Devices."
+            ),
+        },
+        Err(e) => eprintln!("{e:#}"),
+    }
+    secret::delete(&paths.data, &keys)?;
+    println!("Credentials deleted from this computer.");
     Ok(())
 }
 

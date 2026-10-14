@@ -9,10 +9,7 @@ use rsa::{
     RsaPrivateKey,
 };
 use serde_json::Value;
-use std::{
-    path::PathBuf,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::time::{SystemTime, UNIX_EPOCH};
 use time::{macros::format_description, OffsetDateTime};
 
 /// Cliente de la API interna de Audible (`api.audible.<tld>`). Cada petición
@@ -24,18 +21,23 @@ pub struct Client {
     base: String,
     auth: Auth,
     key: SigningKey<rsa::sha2::Sha256>,
+    /// How the credentials are stored on this machine.
+    pub protection: crate::secret::Protection,
 }
 
 impl Client {
-    pub fn new(auth_path: PathBuf) -> Result<Self> {
-        Self::from_auth(Auth::load(&auth_path)?)
+    /// Loads the saved credentials from the private data directory.
+    pub fn open(data_dir: &std::path::Path) -> Result<Self> {
+        let (auth, protection) = crate::secret::load(data_dir, &crate::secret::OsKeychain)?;
+        Ok(Self { protection, ..Self::from_auth(auth)? })
     }
 
     pub fn from_auth(auth: Auth) -> Result<Self> {
         let key = RsaPrivateKey::from_pkcs1_pem(&auth.device_private_key).context("clave del dispositivo inválida")?;
         let http = reqwest::Client::builder().user_agent("Audible/3.56.2 iOS/15.0.0").build()?;
         let base = format!("https://api.audible.{}", auth.tld());
-        Ok(Self { http, base, auth, key: SigningKey::new(key) })
+        let protection = crate::secret::Protection::Keychain;
+        Ok(Self { http, base, auth, key: SigningKey::new(key), protection })
     }
 
     pub fn auth(&self) -> &Auth {

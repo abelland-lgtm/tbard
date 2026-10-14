@@ -37,11 +37,6 @@ impl Auth {
         serde_json::from_slice(&raw).context("auth.json inválido")
     }
 
-    /// Guarda con permisos 0600: contiene tokens y la clave privada del dispositivo.
-    pub fn save(&self, path: &Path) -> Result<()> {
-        crate::config::write_private(path, &serde_json::to_vec_pretty(self)?)
-    }
-
     /// Dominio de la tienda según el país (`us` → `com`).
     pub fn tld(&self) -> &'static str {
         tld(&self.locale_code)

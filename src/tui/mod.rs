@@ -88,7 +88,7 @@ pub struct App {
 }
 
 pub async fn run(paths: Paths) -> Result<()> {
-    let client = Arc::new(Client::new(paths.auth())?);
+    let client = Arc::new(Client::open(&paths.data)?);
     let db = Db::open(&paths.db())?;
     let (tx, mut rx) = mpsc::unbounded_channel();
 
@@ -124,6 +124,9 @@ pub async fn run(paths: Paths) -> Result<()> {
         online: None,
         quit: false,
     };
+    if app.client.protection != crate::secret::Protection::Keychain {
+        app.say("no system keychain: credentials are stored unencrypted (readable only by your user)");
+    }
     let res = app.main_loop(&mut terminal, &mut rx).await;
     app.stop_player().await;
     ratatui::restore();
