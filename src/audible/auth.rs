@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::{io::Write, os::unix::fs::OpenOptionsExt, path::Path};
+use std::path::Path;
 
 /// Credenciales de un dispositivo registrado en Audible.
 #[derive(Serialize, Deserialize, Clone)]
@@ -39,17 +39,7 @@ impl Auth {
 
     /// Guarda con permisos 0600: contiene tokens y la clave privada del dispositivo.
     pub fn save(&self, path: &Path) -> Result<()> {
-        let tmp = path.with_extension("tmp");
-        let mut f = std::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(&tmp)?;
-        f.write_all(&serde_json::to_vec_pretty(self)?)?;
-        f.sync_all()?;
-        std::fs::rename(tmp, path)?;
-        Ok(())
+        crate::config::write_private(path, &serde_json::to_vec_pretty(self)?)
     }
 
     /// Dominio de la tienda según el país (`us` → `com`).

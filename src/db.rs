@@ -66,6 +66,7 @@ pub struct Pending {
 
 impl Db {
     pub fn open(path: &Path) -> Result<Self> {
+        crate::config::secure_file(path)?;
         Self::init(Connection::open(path)?)
     }
 

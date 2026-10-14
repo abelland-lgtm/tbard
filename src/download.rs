@@ -84,7 +84,13 @@ pub struct Downloaded {
 
 /// Descarga un libro en máxima calidad y lo divide por capítulos en
 /// `<biblioteca>/<autor>/<título>`.
-pub async fn book(client: &Client, library: &Path, book: &Book, mut progress: impl FnMut(Progress)) -> Result<Downloaded> {
+pub async fn book(
+    client: &Client,
+    ffmpeg: &Path,
+    library: &Path,
+    book: &Book,
+    mut progress: impl FnMut(Progress),
+) -> Result<Downloaded> {
     let lic = content::license(client, &book.asin).await?;
     let dir = book_dir(library, &book.authors, &book.title);
     fs::create_dir_all(&dir).await?;
@@ -98,8 +104,8 @@ pub async fn book(client: &Client, library: &Path, book: &Book, mut progress: im
     };
     let aaxc = dir.join(format!("{}.aaxc", book.asin));
     fetch(client, &lic.offline_url, &aaxc, |done, total| progress(Progress::Audio { done, total })).await?;
-    let tags = Tags { album: &book.title, artist: &book.authors };
-    split(&aaxc, Some((&lic.key, &lic.iv)), &lic.chapters, cover.as_deref(), &tags, &dir, |done, total| {
+    let tags = Tags { album: &book.title, artist: &book.authors, cover: cover.as_deref() };
+    split(ffmpeg, &aaxc, Some((&lic.key, &lic.iv)), &lic.chapters, &tags, &dir, |done, total| {
         progress(Progress::Splitting { done, total })
     })
     .await?;
@@ -108,18 +114,21 @@ pub async fn book(client: &Client, library: &Path, book: &Book, mut progress: im
     Ok(Downloaded { dir, acr: lic.acr, content_format: lic.content_format })
 }
 
+/// Metadata written into every chapter file.
 pub struct Tags<'a> {
     pub album: &'a str,
     pub artist: &'a str,
+    /// Embedded as cover art.
+    pub cover: Option<&'a Path>,
 }
 
 /// Corta `input` en un archivo `.m4b` por capítulo, sin recodificar, y escribe
 /// `chapters.json` con los offsets. `key_iv` descifra AAXC al vuelo.
 pub async fn split(
+    ffmpeg: &Path,
     input: &Path,
     key_iv: Option<(&str, &str)>,
     chapters: &[Chapter],
-    cover: Option<&Path>,
     tags: &Tags<'_>,
     out_dir: &Path,
     mut on_chapter: impl FnMut(usize, usize),
@@ -130,13 +139,13 @@ pub async fn split(
     let mut files = Vec::with_capacity(total);
     for (i, ch) in chapters.iter().enumerate() {
         let file = format!("{:0width$} - {}.m4b", i + 1, sanitize(&ch.title));
-        let mut cmd = Command::new("ffmpeg");
+        let mut cmd = Command::new(ffmpeg);
         cmd.args(["-nostdin", "-loglevel", "error", "-y"]);
         if let Some((key, iv)) = key_iv {
             cmd.args(["-audible_key", key, "-audible_iv", iv]);
         }
         cmd.args(["-ss", &secs(ch.start_ms), "-t", &secs(ch.length_ms), "-i"]).arg(input);
-        if let Some(cover) = cover {
+        if let Some(cover) = tags.cover {
             cmd.arg("-i").arg(cover).args(["-map", "1:v", "-disposition:v", "attached_pic"]);
         }
         cmd.args(["-map", "0:a", "-c", "copy", "-map_metadata", "-1", "-map_chapters", "-1"])
@@ -219,7 +228,7 @@ mod tests {
         ];
         let out = dir.join("out");
         let files =
-            split(&src, None, &chapters, None, &Tags { album: "Libro", artist: "Autora" }, &out, |_, _| {})
+            split(Path::new("ffmpeg"), &src, None, &chapters, &Tags { album: "Libro", artist: "Autora", cover: None }, &out, |_, _| {})
                 .await
                 .unwrap();
         assert_eq!(load_index(&out).await.unwrap(), files);

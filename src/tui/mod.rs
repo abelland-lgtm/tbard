@@ -345,6 +345,10 @@ impl App {
         if book.path.is_some() {
             return;
         }
+        let ffmpeg = match self.paths.ffmpeg() {
+            Ok(p) => p.to_owned(),
+            Err(e) => return self.say(format!("{e:#}")),
+        };
         self.downloads.insert(asin.to_owned(), Dl::Queued);
         let (client, tx, slot) = (self.client.clone(), self.tx.clone(), self.download_slot.clone());
         let library = self.paths.library.clone();
@@ -352,7 +356,7 @@ impl App {
             // Una descarga a la vez; el resto espera en cola.
             let _permit = slot.acquire().await;
             let asin = book.asin.clone();
-            let res = download::book(&client, &library, &book, |p| {
+            let res = download::book(&client, &ffmpeg, &library, &book, |p| {
                 let _ = tx.send(Msg::Progress(asin.clone(), p));
             })
             .await;
@@ -398,9 +402,9 @@ impl App {
         let acr = book.acr.clone().context("libro sin acr")?;
         let files = download::load_index(&dir).await?;
         let settings = self.db.settings(asin)?;
-        let socket = self.paths.runtime.join(format!("tbard-{}.sock", std::process::id()));
+        let socket = crate::player::ipc_path(&self.paths.runtime);
         let opts = Options { terminal: false, speed: settings.speed, volume: settings.volume };
-        let mpv = Mpv::spawn(&socket, &dir, &files, start, &opts).await?;
+        let mpv = Mpv::spawn(self.paths.mpv()?, &socket, &dir, &files, start, &opts).await?;
         self.player = Some(Player {
             mpv,
             session: Session::new(asin.to_owned(), acr, files, start, Instant::now()),

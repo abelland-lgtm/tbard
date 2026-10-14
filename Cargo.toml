@@ -11,6 +11,7 @@ base64 = "0.23.1"
 cbc = "0.2.1"
 clap = { version = "4.6.7", features = ["derive"] }
 crossterm = { version = "0.29.0", features = ["event-stream"] }
+directories = "6.0.0"
 futures-util = "0.3.34"
 fuzzy-matcher = "0.3.7"
 hex = "0.4.3"

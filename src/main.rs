@@ -48,6 +48,8 @@ enum Cmd {
     },
     /// Envía las posiciones pendientes.
     Sync,
+    /// Checks the installation: external programs, file locations and session.
+    Doctor,
 }
 
 #[tokio::main]
@@ -75,6 +77,7 @@ async fn main() -> Result<()> {
             Ok(())
         }
         Some(Cmd::Play { query }) => cmd_play(&paths, &query.join(" ")).await,
+        Some(Cmd::Doctor) => cmd_doctor(&paths),
         Some(Cmd::Sync) => {
             let (client, db) = open(&paths)?;
             let left = sync::flush(&client, &db).await?;
@@ -86,7 +89,8 @@ async fn main() -> Result<()> {
 
 /// Log a archivo (nunca a la terminal: la TUI la ocupa). Nivel con `TBARD_LOG`.
 fn init_log(paths: &Paths) -> Result<()> {
-    let file = std::fs::OpenOptions::new().create(true).append(true).open(&paths.log)?;
+    config::secure_file(&paths.log)?;
+    let file = std::fs::OpenOptions::new().append(true).open(&paths.log)?;
     tracing_subscriber::fmt()
         .with_writer(std::sync::Mutex::new(file))
         .with_ansi(false)
@@ -94,6 +98,52 @@ fn init_log(paths: &Paths) -> Result<()> {
             tracing_subscriber::EnvFilter::try_from_env("TBARD_LOG").unwrap_or_else(|_| "tbard=info".into()),
         )
         .init();
+    Ok(())
+}
+
+fn cmd_doctor(paths: &Paths) -> Result<()> {
+    let mut problems = 0;
+    let mut check = |ok: bool, label: &str, detail: String| {
+        problems += usize::from(!ok);
+        println!("{} {label:<9} {detail}", if ok { "✓" } else { "✗" });
+    };
+    println!("tbard {}\n", env!("CARGO_PKG_VERSION"));
+    for (label, path) in [
+        ("config", paths.config_file()),
+        ("data", paths.data.clone()),
+        ("cache", paths.cache.clone()),
+        ("log", paths.log.clone()),
+        ("library", paths.library.clone()),
+    ] {
+        println!("  {label:<9} {}", paths.display(&path));
+    }
+    println!();
+
+    // First line of `<program> <flag>`, e.g. "mpv v0.41.0 Copyright…".
+    let version = |program: &std::path::Path, flag: &str| {
+        let out = std::process::Command::new(program).arg(flag).output().ok()?;
+        String::from_utf8_lossy(&out.stdout).lines().next().map(str::to_owned)
+    };
+    match paths.mpv() {
+        Ok(p) => check(true, "mpv", version(p, "--version").unwrap_or_else(|| p.display().to_string())),
+        Err(e) => check(false, "mpv", e.to_string()),
+    }
+    match paths.ffmpeg() {
+        Ok(p) => {
+            check(true, "ffmpeg", version(p, "-version").unwrap_or_else(|| p.display().to_string()));
+            let help = std::process::Command::new(p).args(["-hide_banner", "-h", "demuxer=mov"]).output();
+            let audible = help.is_ok_and(|o| String::from_utf8_lossy(&o.stdout).contains("audible_key"));
+            check(audible, "", if audible { "can decrypt Audible downloads".into() } else { "this ffmpeg build lacks -audible_key (too old?)".into() });
+        }
+        Err(e) => check(false, "ffmpeg", e.to_string()),
+    }
+    match audible::auth::Auth::load(&paths.auth()) {
+        Ok(a) => check(true, "session", format!("{} (store: {})", a.customer_info.name, a.locale_code)),
+        Err(_) => check(false, "session", "not logged in: run `tbard login`".into()),
+    }
+    if problems > 0 {
+        bail!("{problems} problem(s) found");
+    }
     Ok(())
 }
 
@@ -159,8 +209,8 @@ async fn cmd_play(paths: &Paths, query: &str) -> Result<()> {
 
     let settings = db.settings(&book.asin)?;
     let opts = player::Options { terminal: true, speed: settings.speed, volume: settings.volume };
-    let socket = paths.runtime.join(format!("tbard-{}.sock", std::process::id()));
-    let mut mpv = player::Mpv::spawn(&socket, &dir, &files, start, &opts).await?;
+    let socket = player::ipc_path(&paths.runtime);
+    let mut mpv = player::Mpv::spawn(paths.mpv()?, &socket, &dir, &files, start, &opts).await?;
     let mut s = session::Session::new(book.asin.clone(), acr, files, start, Instant::now());
     loop {
         tokio::time::sleep(Duration::from_secs(1)).await;
@@ -196,7 +246,7 @@ async fn cmd_play(paths: &Paths, query: &str) -> Result<()> {
 async fn download(client: &Client, db: &Db, paths: &Paths, book: &Book) -> Result<(PathBuf, String)> {
     println!("Descargando «{}»…", book.title);
     let mut last = None;
-    let d = download::book(client, &paths.library, book, |p| {
+    let d = download::book(client, paths.ffmpeg()?, &paths.library, book, |p| {
         let line = match p {
             download::Progress::Audio { done, total } => {
                 format!("audio: {}% ({} / {} MB)", done * 100 / total.max(1), done >> 20, total >> 20)
