@@ -1,12 +1,51 @@
-# API de Audible: notas observadas
+# Audible API: observed behaviour
 
-Peticiones y respuestas observadas en el spike (2026-10-13, marketplace `us`,
-`api.audible.com`). Es la única fuente para implementar tbard: protocolo, no
-código de terceros. Sin tokens, vouchers ni datos de la cuenta.
+Requests and responses observed while building tbard (October 2026, `us`
+marketplace, `api.audible.com`). This is the reference tbard is implemented
+from: the protocol as seen on the wire, not third-party code. No tokens,
+vouchers or account data are included.
 
-Libro de prueba: *Juramentada* (`B09GX6H7J8`), 151 capítulos, 57 h 39 min.
+Test books: *Juramentada* (`B09GX6H7J8`, 151 chapters, 57 h 39 min) and
+*Robot salvaje* (`B0DKXZLL89`, 86 chapters, 4 h 25 min).
 
-## Leer posición
+## Signing requests ✅ confirmed
+
+With a device registered as an iPhone (`A2CZJZGLK2JJVM`), `Authorization:
+Bearer` + `client-id: 0` fails with `400 "The specified authorization token
+does not correspond to the specified Client-ID"`. What works is an **ADP
+signature** on every request:
+
+- `x-adp-token: <adp_token>`
+- `x-adp-alg: SHA256withRSA:1.0`
+- `x-adp-signature: <base64(signature)>:<date>`
+  - date: UTC `YYYY-MM-DDTHH:MM:SS.ffffffZ`
+  - signature: RSA PKCS#1 v1.5 + SHA-256 with `device_private_key` (PKCS#1
+    PEM) over `METHOD\nPATH?QUERY\nDATE\nBODY\nADP_TOKEN`
+
+The API never needs a refreshed `access_token`; only device deregistration
+does (see below).
+
+## Device registration ✅ confirmed
+
+1. Open `https://www.amazon.<tld>/ap/signin` with OAuth + PKCE parameters
+   (`openid.oa2.code_challenge`, `openid.oa2.client_id=device:<hex(serial#type)>`,
+   `openid.assoc_handle=amzn_audible_ios_<country>`, `marketPlaceId`, …).
+2. After signing in, the browser lands on `…/ap/maplanding?…` carrying
+   `openid.oa2.authorization_code`.
+3. `POST https://api.amazon.<tld>/auth/register` with the code and the PKCE
+   verifier returns `bearer` tokens, `mac_dms` (`adp_token`,
+   `device_private_key`), `device_info` and `customer_info`.
+
+## Device deregistration (implemented, not yet tested on a real account)
+
+1. `POST https://api.amazon.<tld>/auth/token` (form: `source_token=<refresh_token>`,
+   `source_token_type=refresh_token`, `requested_token_type=access_token`,
+   `app_name=Audible`) → `access_token`.
+2. `POST https://api.amazon.<tld>/auth/deregister` with
+   `Authorization: Bearer <access_token>` and
+   `{"deregister_all_existing_accounts": false}`.
+
+## Reading the position
 
 `GET 1.0/annotations/lastpositions?asins=<ASIN>[,<ASIN>…]`
 
@@ -17,9 +56,10 @@ Libro de prueba: *Juramentada* (`B09GX6H7J8`), 151 capítulos, 57 h 39 min.
  "response_groups": ["always-returned"]}
 ```
 
-- `last_updated` está en UTC, sin zona, con formato `YYYY-MM-DD HH:MM:SS.mmm`.
+- `last_updated` is UTC without a zone, `YYYY-MM-DD HH:MM:SS.mmm`, and may
+  have fewer than three decimals (`02:59:17.94`).
 
-## Escribir posición (Whispersync) ✅ confirmado
+## Writing the position (Whispersync) ✅ confirmed
 
 `PUT 1.0/lastpositions/<ASIN>`
 
@@ -27,30 +67,26 @@ Libro de prueba: *Juramentada* (`B09GX6H7J8`), 151 capítulos, 57 h 39 min.
 {"acr": "<acr>", "asin": "<ASIN>", "position_ms": 7200000}
 ```
 
-- Responde `200` con el cuerpo vacío (`""`).
-- Una lectura inmediata devuelve la posición nueva y `last_updated` = ahora.
-- La app del móvil mostró 2:00:00 tras el PUT. La posición original se
-  restauró con otro PUT.
-- `acr` es obligatorio. Sale de `content_reference.acr` en metadata o en
-  licenserequest, y es estable por versión del contenido, así que hay que
-  guardarlo en la base de datos.
+- Answers `200` with an empty body.
+- A read right after returns the new position and `last_updated` = now.
+- The phone app showed the new position (2:00:00) after the PUT.
+- `acr` is required. It comes from `content_reference.acr` in the metadata
+  or the license request and is stable per content version, so tbard stores it.
 
-## Metadata (capítulos, acr, última posición)
+## Metadata (chapters, acr, last position)
 
 `GET 1.0/content/<ASIN>/metadata?response_groups=last_position_heard,content_reference,chapter_info`
 
 - `content_metadata.content_reference`: `acr`, `asin`, `codec` (`mp4a.40.2`),
-  `content_format` (`M4A_AAX`), `content_size_in_bytes`, `marketplace`, `sku`,
-  `version`.
-- `content_metadata.chapter_info`: `brandIntroDurationMs` (4086),
-  `brandOutroDurationMs` (11145), `is_accurate` (true), `runtime_length_ms`,
-  `runtime_length_sec`, `chapters[]`.
-  - Cada capítulo: `{title, start_offset_ms, start_offset_sec, length_ms}`.
-    Puede llevar `chapters[]` anidado (partes/libros). En este libro no hay
-    anidados y los títulos son genéricos ("Capítulo N").
-- `content_metadata.last_position_heard`: igual que en lastpositions.
+  `content_format`, `content_size_in_bytes`, `marketplace`, `sku`, `version`.
+- `content_metadata.chapter_info`: `brandIntroDurationMs`,
+  `brandOutroDurationMs`, `is_accurate`, `runtime_length_ms`, `chapters[]`.
+  - Each chapter: `{title, start_offset_ms, start_offset_sec, length_ms}`,
+    possibly with nested `chapters[]` (parts or books in a bundle).
+  - Titles can be generic ("Capítulo 8") or real ("Capítulo 31: La Primera
+    Noche"), depending on the book.
 
-## Códecs disponibles
+## Available codecs
 
 `GET 1.0/library/<ASIN>?response_groups=media,product_attrs` → `item.available_codecs[]`:
 
@@ -60,10 +96,9 @@ Libro de prueba: *Juramentada* (`B09GX6H7J8`), 151 capítulos, 57 h 39 min.
 | `aax_22_32` | `LC_32_22050_stereo` |
 | `aax` | `aax` |
 
-El bitrate está en `enhanced_codec` (`LC_<kbps>_<Hz>_<canales>`), que sirve
-para mostrar la calidad máxima disponible.
+The bitrate is in `enhanced_codec` (`LC_<kbps>_<Hz>_<channels>`).
 
-## Licencia y descarga
+## License and download
 
 `POST 1.0/content/<ASIN>/licenserequest`
 
@@ -72,63 +107,31 @@ para mostrar la calidad máxima disponible.
  "quality": "High", "response_groups": "content_reference,chapter_info"}
 ```
 
-| quality | content_format concedido | tamaño | kbps |
+| quality | granted content_format | size | kbps |
 |---|---|---|---|
 | `High` | `AAX_22_64` | 1 678 137 467 B | 64 |
 | `Normal` | `AAX_22_32` | 847 875 394 B | 32 |
 
-- `High` concede la mejor de `available_codecs`, así que **siempre se pide
-  `High`**.
+- `High` grants the best entry of `available_codecs`, so tbard always asks
+  for `High` (*Robot salvaje* got `AAX_44_128`: AAC 44.1 kHz, ~126 kbps).
 - `content_license`: `status_code` (`Granted`), `drm_type` (`Adrm`),
-  `license_response` (voucher cifrado),
-  `content_metadata.content_url.offline_url`,
-  `content_metadata.content_reference`, `content_metadata.chapter_info`.
-- El `chapter_info` de la licencia coincide con el de metadata (151
-  capítulos).
+  `license_response` (encrypted voucher), `content_metadata.content_url.offline_url`
+  (a signed CDN URL), `content_metadata.content_reference`,
+  `content_metadata.chapter_info`.
+- The voucher decrypts with AES-128-CBC; key = bytes 0..16 and IV = bytes
+  16..32 of SHA-256(`device_type + device_serial + user_id + asin`). The
+  resulting JSON has `key` and `iv` in hex for `ffmpeg -audible_key/-audible_iv`.
 
-## Autenticación de las peticiones ✅ confirmado
+## Splitting by chapter ✅ confirmed
 
-Con un dispositivo registrado como iPhone (`A2CZJZGLK2JJVM`), `Authorization:
-Bearer` + `client-id: 0` falla con `400 "The specified authorization token does
-not correspond to the specified Client-ID"`. Lo que funciona es la **firma ADP**
-en cada petición:
+- Cutting the AAXC per chapter with `-ss/-t` before `-i` and `-c copy` works
+  without an intermediate file: 86 chapters in about 5 s, at most 30 ms off
+  per chapter and 0.9 s over the whole book.
+- The book-wide position (chapter `start_offset_ms` + position inside its
+  file) matches the phone app: the same chapter and minute in tbard and in
+  the app. The brand intro is part of both the file and the offsets.
 
-- `x-adp-token: <adp_token>`
-- `x-adp-alg: SHA256withRSA:1.0`
-- `x-adp-signature: <base64(firma)>:<fecha>`
-  - fecha: UTC `YYYY-MM-DDTHH:MM:SS.ffffffZ`
-  - firma: RSA PKCS#1 v1.5 + SHA-256 con `device_private_key` (PEM PKCS#1)
-    sobre `MÉTODO\nRUTA?QUERY\nFECHA\nCUERPO\nADP_TOKEN`
+## Still to check
 
-No hace falta refrescar el `access_token` para la API de Audible.
-
-## Descarga real ✅ confirmado (*Robot salvaje*, `B0DKXZLL89`)
-
-- `High` concedió `AAX_44_128` (AAC 44,1 kHz a 126 kbps reales, estéreo):
-  244 MB por 4 h 25 min.
-- El voucher se descifra con SHA-256(`device_type + serial + user_id + asin`)
-  → clave = bytes 0..16 e IV = 16..32, AES-128-CBC. El JSON resultante trae
-  `key` e `iv` en hex para `ffmpeg -audible_key/-audible_iv`.
-- Cortar el AAXC por capítulo con `-ss/-t` delante de `-i` y `-c copy`
-  funciona sin archivo intermedio: 86 capítulos en unos 5 s. La desviación
-  máxima por capítulo es de 30 ms y la suma total difiere en 0,9 s.
-- La fecha `last_updated` puede venir con menos de 3 decimales
-  (`02:59:17.94`).
-- Los capítulos de este libro sí traen títulos reales ("Capítulo 31: La
-  Primera Noche"); Juramentada solo los trae genéricos.
-
-## Alineación con la app ✅ confirmado
-
-El ms global de tbard (`start_offset_ms` del capítulo + posición dentro de su
-archivo) coincide con el de la app del móvil: al mismo capítulo y minuto en
-tbard, la app muestra el mismo capítulo y minuto. La intro de marca está
-incluida en el archivo y en los offsets, así que no hace falta corregirla.
-
-## Login nativo ✅ confirmado
-
-`tbard login` (registro con `auth/register` tras el sign-in en el navegador)
-funciona con una cuenta real.
-
-## Pendiente de verificar
-
-- Si existe un endpoint de "marcar como terminado".
+- Whether there is an endpoint to mark a book as finished; tbard sends the
+  final position instead.

@@ -1,81 +1,202 @@
 # tbard
 
-Audible desde la terminal: biblioteca, descarga en máxima calidad dividida por
-capítulos, reproducción con mpv y sincronización de la posición con la app del
-móvil (Whispersync).
+**Audible from the terminal.** Browse your Audible library, download books in
+the best available quality split into one file per chapter, listen to them
+with mpv, and keep your position in sync with the Audible app on your phone.
 
-## Uso
+- Library with fuzzy search, sections and cover art (Kitty/Ghostty graphics
+  or half blocks).
+- Downloads in the best quality Audible offers, losslessly split by chapter
+  (`.m4b` with title, track number and cover).
+- Player with chapters, ±30 s, speed 0.5–3×, volume and a sleep timer.
+- Two-way position sync (Whispersync). Offline playback with a queue that
+  sends positions when the connection comes back.
+- English and Spanish interface.
+- Linux, macOS and Windows.
+
+> **Disclaimer.** tbard is an unofficial tool, not affiliated with Audible or
+> Amazon. It talks to Audible's private API, which may change at any time.
+> Use it only for books you have bought, for your personal listening. Removing
+> DRM may be restricted where you live; you are responsible for how you use it.
+
+## Install
+
+tbard needs **mpv** (playback) and **ffmpeg** (decryption and splitting) on
+your `PATH`. Package managers below install them for you; otherwise install
+them yourself.
+
+| Platform | Command |
+|---|---|
+| macOS / Linux (Homebrew) | `brew install abelland-lgtm/tap/tbard` |
+| Arch Linux (AUR) | `yay -S tbard-bin` |
+| Windows (Scoop) | `scoop bucket add extras; scoop bucket add tbard https://github.com/abelland-lgtm/scoop-bucket; scoop install tbard` |
+| Any Linux / macOS | `curl --proto '=https' --tlsv1.2 -LsSf https://github.com/abelland-lgtm/tbard/releases/latest/download/tbard-installer.sh \| sh` |
+| Windows (PowerShell) | `powershell -ExecutionPolicy Bypass -c "irm https://github.com/abelland-lgtm/tbard/releases/latest/download/tbard-installer.ps1 \| iex"` |
+| Rust toolchain | `cargo install tbard --locked` |
+| Nix | `nix run github:abelland-lgtm/tbard` |
+
+Prebuilt binaries for every platform are on the
+[releases page](https://github.com/abelland-lgtm/tbard/releases).
+
+Installing mpv and ffmpeg by hand:
+
+- Debian/Ubuntu: `sudo apt install mpv ffmpeg`
+- Fedora: `sudo dnf install mpv ffmpeg` (ffmpeg from RPM Fusion)
+- Arch: `sudo pacman -S mpv ffmpeg`
+- macOS: `brew install mpv ffmpeg`
+- Windows: `scoop bucket add extras; scoop install mpv ffmpeg`
+
+Run `tbard doctor` to check that everything is in place.
+
+## Quick start
 
 ```sh
-tbard login --locale us          # registra tbard como dispositivo (se abre el navegador)
-tbard                            # TUI: biblioteca + reproductor
-tbard play juramentada           # sin TUI: descarga si falta y reproduce con mpv
-tbard download robot salvaje     # solo descargar
-tbard library                    # actualizar y listar la biblioteca
-tbard sync                       # enviar posiciones pendientes
+tbard
 ```
 
-### Teclas de la TUI
+The first time, tbard asks for your language and your Audible store, opens
+Amazon's sign-in page in your browser and asks you to paste the address you
+land on. After that it opens your library.
 
-| Biblioteca | | Reproductor | |
+Everything is also available from the command line:
+
+```sh
+tbard login --locale us        # sign in (store: us, uk, ca, au, in, de, fr, it, es, jp, br)
+tbard library                  # refresh and list the library
+tbard play dune                # play (downloading first if needed), syncing the position
+tbard download project hail    # download only
+tbard sync                     # send positions queued while offline
+tbard doctor                   # check mpv, ffmpeg, folders and session
+tbard logout                   # remove this device from Amazon and delete the credentials
+```
+
+### Keys
+
+| Library | | Player | |
 |---|---|---|---|
-| `/` | buscar | `espacio` | pausa |
-| `f` | filtro | `←` / `→` | ±30 s |
-| `d` | descargar | `[` / `]` | capítulo |
-| `⏎` | reproducir | `+` / `-` | velocidad |
-| `r` | actualizar | `9` / `0` | volumen |
-| `1`–`5` | sección del menú | | |
-| `tab` | ir al reproductor | `t` | temporizador |
-| `c` | configuración | `s` / `tab` | parar / biblioteca |
-| `q` | salir | `q` | salir |
+| `/` | search | `space` | pause |
+| `1`–`5` | section | `←` `→` | ±30 s |
+| `↵` | listen | `[` `]` | previous / next chapter |
+| `d` | download | `+` `-` | speed |
+| `r` | refresh | `9` `0` | volume |
+| `c` | settings | `t` | sleep timer |
+| `tab` | player | `s` | stop |
+| `q` | quit | `tab` | back to the library |
 
-En **configuración** (`c`) se elige la carpeta de descargas: ⏎ para editarla,
-⏎ para guardar. Se guarda en `config.toml`; los libros ya descargados se
-quedan donde estaban.
+## How syncing works
 
-## Sincronización
+- On start, tbard uses the most recent of the local and the Audible position.
+  If both changed since the last sync and they differ by more than two
+  minutes, it asks which one to use.
+- While playing it saves the position locally every 5 s and sends it to
+  Audible every 2 minutes, on pause and when you stop.
+- Without a connection, positions wait in a queue and are sent later.
 
-- Al empezar se usa la posición más reciente entre la local y la de Audible.
-  Si las dos cambiaron y difieren más de 2 min, tbard pregunta.
-- Durante la reproducción guarda en local cada 5 s y envía a Audible cada
-  2 min, al pausar y al cerrar.
-- Sin conexión, las posiciones quedan en cola y se envían al volver la red.
+## Files and privacy
 
-## Archivos
+tbard stores everything in your user's own folders. Nothing is shared with
+other users of the computer, and nothing is sent anywhere except to Amazon and
+Audible. There is no telemetry.
 
-| Ruta | Contenido |
-|---|---|
-| `~/Audiobooks/<autor>/<título>/` | un `.m4b` por capítulo + `chapters.json` + portada |
-| `~/.local/share/tbard/` | `auth.json` (0600) y `tbard.db` (SQLite) |
-| `~/.config/tbard/config.toml` | `library_dir = "~/Audiobooks"` (lo escribe la TUI, o home-manager si se usa `settings`) |
-| `~/.config/tbard/colors.toml` | colores (plantilla de Noctalia, se recarga en vivo) |
-| `~/.local/state/tbard/tbard.log` | log (`TBARD_LOG=debug` para más detalle) |
+| What | Linux | macOS | Windows |
+|---|---|---|---|
+| Settings and theme (`config.toml`, `colors.toml`) | `~/.config/tbard` | `~/Library/Application Support/tbard` | `%APPDATA%\tbard\config` |
+| Credentials and database | `~/.local/share/tbard` | `~/Library/Application Support/tbard` | `%APPDATA%\tbard\data` |
+| Cover cache | `~/.cache/tbard` | `~/Library/Caches/tbard` | `%LOCALAPPDATA%\tbard\cache` |
+| Log | `~/.local/state/tbard` | `~/Library/Application Support/tbard/logs` | `%LOCALAPPDATA%\tbard\data\logs` |
+| Audiobooks | `~/Audiobooks` (configurable) | `~/Audiobooks` | `%USERPROFILE%\Audiobooks` |
 
-## Nix
+**Credentials.** Signing in registers tbard as a device on your Amazon account
+(like a phone with the Audible app). Its tokens and private key are saved in
+`credentials.enc`, encrypted with AES-256-GCM. The encryption key is kept in
+your system keychain: Keychain on macOS, Credential Manager on Windows, and
+the Secret Service (GNOME Keyring, KWallet) on Linux. A copy of the file is
+useless on another machine or user account. If no keychain is available (for
+example a server without a desktop), tbard stores `credentials.json`
+unencrypted, readable only by you, and warns about it.
+
+**Permissions.** On Linux and macOS tbard's folders are created `0700` and its
+private files `0600`. On Windows they live inside your user profile, which
+only you can read.
+
+**Logs** never contain tokens or the signed download links.
+
+**What is stored:**
+- `credentials.enc` (or `credentials.json`): your device registration.
+- `tbard.db`: library cache, listening positions, per-book speed and volume.
+- Cover images and the downloaded audiobooks.
+
+**Removing everything:** run `tbard logout` (removes the device from your
+Amazon account and deletes the credentials and the keychain entry), then
+delete the folders above. You can also remove the device from Amazon under
+*Account → Content and Devices → Devices*.
+
+## Configuration
+
+`config.toml` in the settings folder. The settings screen (`c`) writes it for
+you.
+
+```toml
+library_dir = "~/Audiobooks"   # where new downloads go
+language = "en"                # "en" or "es"
+mpv_path = "/opt/mpv/bin/mpv"  # only if mpv is not on PATH
+ffmpeg_path = "C:\\tools\\ffmpeg.exe"
+```
+
+Set `TBARD_LOG=debug` for a more detailed log.
+
+### Colors
+
+tbard uses your terminal's colors by default. To change them, create
+`colors.toml` next to `config.toml`; tbard reloads it while running.
+
+```toml
+primary = "#bde0fe"
+on_primary = "#0b344b"
+secondary = "#bbc8d5"
+tertiary = "#f2d0fb"
+error = "#ffb4ab"
+on_surface_variant = "#c2c7cd"
+outline = "#8c9197"
+```
+
+With [Noctalia](https://github.com/noctalia-dev/noctalia-shell), the template
+in [`noctalia/tbard.toml`](noctalia/tbard.toml) generates this file from your
+wallpaper's palette.
+
+## Nix and home-manager
 
 ```nix
-# flake.nix de tu sistema
+# flake inputs
 inputs.tbard.url = "github:abelland-lgtm/tbard";
 
 # home-manager
 imports = [ inputs.tbard.homeManagerModules.default ];
 programs.tbard = {
   enable = true;
-  settings.library_dir = "~/Audiobooks";
+  settings.library_dir = "~/Audiobooks";  # optional; makes config.toml read-only
 };
 
-# Noctalia: colores de la paleta del fondo
+# Noctalia
 theme.templates.user.tbard = {
   input_path = "${inputs.tbard}/noctalia/tbard.toml";
   output_path = "$XDG_CONFIG_HOME/tbard/colors.toml";
 };
 ```
 
-Desarrollo: `nix develop`, `cargo test`, `nix flake check` (incluye
-`cargo deny check licenses`).
+## Development
 
-La API de Audible usada está documentada en [`docs/audible-api.md`](docs/audible-api.md).
+```sh
+nix develop          # or install Rust, mpv and ffmpeg yourself
+cargo test
+cargo clippy --all-targets -- -D warnings
+cargo deny check licenses
+nix flake check
+```
 
-## Licencia
+[`docs/audible-api.md`](docs/audible-api.md) documents the Audible API as
+tbard uses it.
 
-[GPL-3.0 o posterior](LICENSE). Copyright (C) 2026 Abelland.
+## License
+
+[GPL-3.0-or-later](LICENSE). Copyright (C) 2026 Abelland.
