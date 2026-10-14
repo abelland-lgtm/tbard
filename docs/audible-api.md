@@ -124,7 +124,11 @@ archivo) coincide con el de la app del móvil: al mismo capítulo y minuto en
 tbard, la app muestra el mismo capítulo y minuto. La intro de marca está
 incluida en el archivo y en los offsets, así que no hace falta corregirla.
 
+## Login nativo ✅ confirmado
+
+`tbard login` (registro con `auth/register` tras el sign-in en el navegador)
+funciona con una cuenta real.
+
 ## Pendiente de verificar
 
-- El login nativo (`auth/register`) con una cuenta real.
 - Si existe un endpoint de "marcar como terminado".
