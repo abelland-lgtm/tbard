@@ -72,4 +72,4 @@ La API de Audible usada está documentada en [`docs/audible-api.md`](docs/audibl
 
 ## Licencia
 
-Propietaria. Ver [LICENSE](LICENSE).
+[GPL-3.0 o posterior](LICENSE). Copyright (C) 2026 Abelland.

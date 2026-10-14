@@ -23,10 +23,9 @@
           postInstall = ''
             wrapProgram $out/bin/tbard --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.mpv pkgs.ffmpeg ]}
           '';
-          # Sin meta.license: `unfree` obligaría a activar allowUnfree solo para
-          # evaluarlo. La licencia propietaria está en LICENSE.
           meta = {
             description = "Audible desde la terminal";
+            license = pkgs.lib.licenses.gpl3Plus;
             mainProgram = "tbard";
           };
         };
