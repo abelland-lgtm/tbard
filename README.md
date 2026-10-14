@@ -39,7 +39,7 @@ them yourself.
 | Platform | Command |
 |---|---|
 | macOS / Linux (Homebrew) | `brew install abelland-lgtm/tap/tbard` |
-| Windows (Scoop) | `scoop bucket add extras; scoop bucket add tbard https://github.com/abelland-lgtm/scoop-bucket; scoop install tbard` |
+| Windows (Scoop) | `scoop bucket add extras; scoop bucket add abelland https://github.com/abelland-lgtm/scoop-bucket; scoop install abelland/tbard` |
 | Any Linux / macOS | `curl --proto '=https' --tlsv1.2 -LsSf https://github.com/abelland-lgtm/tbard/releases/latest/download/tbard-installer.sh \| sh` |
 | Windows (PowerShell) | `powershell -ExecutionPolicy Bypass -c "irm https://github.com/abelland-lgtm/tbard/releases/latest/download/tbard-installer.ps1 \| iex"` |
 | Rust toolchain | `cargo install tbard --locked` |
