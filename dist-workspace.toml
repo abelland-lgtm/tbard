@@ -16,7 +16,7 @@ tap = "abelland-lgtm/homebrew-tap"
 # Customize the Homebrew formula name
 formula = "tbard"
 # Publish jobs to run in CI
-publish-jobs = ["homebrew", "./publish-crates", "./publish-aur", "./publish-scoop"]
+publish-jobs = ["./publish-homebrew", "./publish-crates", "./publish-aur", "./publish-scoop"]
 # Path that installers should place binaries in
 install-path = "CARGO_HOME"
 # Whether to install an updater program
@@ -24,7 +24,3 @@ install-updater = false
 # Which actions to run on pull requests
 pr-run-mode = "plan"
 
-# mpv and ffmpeg are runtime dependencies: Homebrew installs them with tbard.
-[dist.dependencies.homebrew]
-mpv = "*"
-ffmpeg = "*"
