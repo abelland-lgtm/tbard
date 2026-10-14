@@ -8,7 +8,7 @@ use time::{macros::format_description, PrimitiveDateTime};
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RemotePos {
     pub position_ms: i64,
-    /// `last_updated`, en ms epoch (UTC).
+    /// `last_updated`, in epoch ms (UTC).
     pub updated_ms: i64,
 }
 

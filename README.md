@@ -2,6 +2,8 @@
 
 **Audiobook manager and listener for the terminal.**
 
+Website and guide: **https://abelland-lgtm.github.io/tbard/** ([en español](https://abelland-lgtm.github.io/tbard/es/))
+
 tbard keeps your audiobook library in one place and plays it from the
 terminal. It connects to your Audible account to list the books you own,
 downloads them in the best available quality split into one file per chapter,
@@ -37,7 +39,6 @@ them yourself.
 | Platform | Command |
 |---|---|
 | macOS / Linux (Homebrew) | `brew install abelland-lgtm/tap/tbard` |
-| Arch Linux (AUR) | `yay -S tbard-bin` |
 | Windows (Scoop) | `scoop bucket add extras; scoop bucket add tbard https://github.com/abelland-lgtm/scoop-bucket; scoop install tbard` |
 | Any Linux / macOS | `curl --proto '=https' --tlsv1.2 -LsSf https://github.com/abelland-lgtm/tbard/releases/latest/download/tbard-installer.sh \| sh` |
 | Windows (PowerShell) | `powershell -ExecutionPolicy Bypass -c "irm https://github.com/abelland-lgtm/tbard/releases/latest/download/tbard-installer.ps1 \| iex"` |

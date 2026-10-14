@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>tbard — gestor y reproductor de audiolibros para la terminal</title>
+  <meta name="description" content="tbard reúne tu biblioteca de audiolibros y la reproduce desde la terminal: biblioteca de Audible, descargas divididas por capítulos en la mejor calidad, reproducción con mpv y posición sincronizada con tu móvil.">
+  <link rel="alternate" hreflang="en" href="../">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230d0b08'/%3E%3Cpath d='M3 3h10v2H9v8H7V5H3z' fill='%23ffb000'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<aside class="sidebar">
+  <a class="logo" href="#overview">
+    <div class="mark">░T░B░A░R░D░</div>
+    <div class="sub">audiolibros · tty</div>
+  </a>
+  <nav aria-label="Secciones">
+    <ul class="nav">
+      <li><a href="#overview">Resumen</a></li>
+      <li><a href="#install">Instalación</a></li>
+      <li><a href="#start">Primeros pasos</a></li>
+      <li><a href="#keys">Teclas</a></li>
+      <li><a href="#sync">Sincronización</a></li>
+      <li><a href="#privacy">Privacidad</a></li>
+      <li><a href="#config">Configuración</a></li>
+      <li><a href="#help">Problemas</a></li>
+      <li><a href="#thanks">Inspiración</a></li>
+    </ul>
+  </nav>
+  <div class="sidebar-foot">
+    <div class="langs"><a href="../" data-switch-lang hreflang="en">English</a> · <b class="dot">●</b> Español</div>
+    <div><a href="https://github.com/abelland-lgtm/tbard">github.com/abelland-lgtm/tbard</a></div>
+    <div>GPL-3.0 o posterior</div>
+  </div>
+</aside>
+
+<main>
+
+<section id="overview">
+  <div class="masthead">
+    <h1>tbard</h1>
+    <ul class="stats">
+      <li><span class="k">sistemas:</span> <span class="v">linux · macos · windows</span></li>
+      <li><span class="k">idiomas:</span> <span class="v">en · es</span></li>
+      <li><span class="k">telemetría:</span> <span class="v">ninguna</span></li>
+      <li><span class="k">licencia:</span> <span class="v">gpl-3.0</span></li>
+    </ul>
+  </div>
+  <hr class="rule">
+  <p class="lead"><strong>Gestor y reproductor de audiolibros para la terminal.</strong>
+    tbard reúne tu biblioteca de audiolibros en un solo lugar y la reproduce desde la terminal. Se conecta a tu
+    cuenta de Audible para ver los libros que tienes, los descarga en la mejor calidad disponible divididos en un
+    archivo por capítulo, los reproduce con mpv y mantiene tu posición sincronizada con la app de Audible del móvil.</p>
+  <div class="actions">
+    <a class="btn primary" href="#install"><span class="key">[⏎]</span> Instalar</a>
+    <a class="btn" href="https://github.com/abelland-lgtm/tbard"><span class="key">[G]</span> Código fuente</a>
+    <a class="btn" href="https://github.com/abelland-lgtm/tbard/releases"><span class="key">[R]</span> Versiones</a>
+  </div>
+
+  <figure>
+    <img src="../assets/img/library-es.webp" width="1600" height="957" alt="La biblioteca de tbard: un menú lateral con secciones, la lista de libros con barras de progreso y una tarjeta con la portada y los datos del libro elegido">
+    <figcaption>La biblioteca. Las capturas usan una biblioteca de demostración con clásicos de dominio público.</figcaption>
+  </figure>
+
+  <div class="grid">
+    <div class="card">
+      <h3>Biblioteca</h3>
+      <p>Búsqueda aproximada, secciones (en curso, descargados, terminados…) y portadas en la terminal, con gráficos de Kitty/Ghostty o medios bloques.</p>
+    </div>
+    <div class="card">
+      <h3>Descargas</h3>
+      <p>La mejor calidad que ofrece Audible, dividida sin pérdida en un <code>.m4b</code> por capítulo con título, número de pista y portada.</p>
+    </div>
+    <div class="card">
+      <h3>Reproductor</h3>
+      <p>Capítulos, ±30 s, velocidad de 0,5× a 3×, volumen y temporizador para dormir. Velocidad y volumen se recuerdan por libro.</p>
+    </div>
+    <div class="card">
+      <h3>Sincronización</h3>
+      <p>Tu posición va y viene con la app de Audible. Sin conexión, espera en una cola y se envía después.</p>
+    </div>
+    <div class="card invert">
+      <h3>Privado por diseño</h3>
+      <p>Las credenciales se guardan cifradas con una clave en el llavero del sistema. Sin telemetría; nada sale de tu equipo salvo hacia Amazon y Audible.</p>
+    </div>
+    <div class="card">
+      <h3>Tu terminal, tus colores</h3>
+      <p>Usa la paleta de tu terminal, o un <code>colors.toml</code> que se recarga en vivo (incluye plantilla para Noctalia).</p>
+    </div>
+  </div>
+
+  <p class="note"><strong>Aviso.</strong> tbard es una herramienta no oficial, sin relación con Audible ni Amazon. Usa la API
+    privada de Audible, que puede cambiar en cualquier momento. Úsalo solo con libros que hayas comprado y para escucharlos
+    tú. Quitar el DRM puede estar restringido donde vives; eres responsable de cómo lo uses.</p>
+</section>
+
+<section id="install">
+  <h2>Instalación</h2>
+  <hr class="rule">
+  <p>tbard necesita <strong>mpv</strong> (reproducción) y <strong>ffmpeg</strong> (descifrado y división). Los gestores de
+    paquetes de abajo los instalan por ti.</p>
+
+  <div class="tabs" role="tablist" aria-label="Sistema operativo">
+    <button class="btn" role="tab" id="t-linux" aria-controls="p-linux" data-os="linux">[ Linux ]</button>
+    <button class="btn" role="tab" id="t-macos" aria-controls="p-macos" data-os="macos">[ macOS ]</button>
+    <button class="btn" role="tab" id="t-windows" aria-controls="p-windows" data-os="windows">[ Windows ]</button>
+    <button class="btn" role="tab" id="t-other" aria-controls="p-other">[ Otros ]</button>
+  </div>
+
+  <div role="tabpanel" id="p-linux" aria-labelledby="t-linux">
+    <h3>Cualquier distribución</h3>
+    <div class="cmd"><pre><code>curl --proto '=https' --tlsv1.2 -LsSf https://github.com/abelland-lgtm/tbard/releases/latest/download/tbard-installer.sh | sh</code></pre></div>
+    <p class="muted">Después instala mpv y ffmpeg con tu gestor de paquetes:</p>
+    <ul class="leaders">
+      <li><span>Debian / Ubuntu</span><span class="fill"></span><code class="v">sudo apt install mpv ffmpeg</code></li>
+      <li><span>Fedora (ffmpeg de RPM Fusion)</span><span class="fill"></span><code class="v">sudo dnf install mpv ffmpeg</code></li>
+      <li><span>Arch</span><span class="fill"></span><code class="v">sudo pacman -S mpv ffmpeg</code></li>
+    </ul>
+    <h3>Homebrew en Linux</h3>
+    <div class="cmd"><pre><code>brew install abelland-lgtm/tap/tbard</code></pre></div>
+  </div>
+
+  <div role="tabpanel" id="p-macos" aria-labelledby="t-macos" hidden>
+    <h3>Homebrew</h3>
+    <div class="cmd"><pre><code>brew install abelland-lgtm/tap/tbard</code></pre></div>
+    <p class="muted">Instala también mpv y ffmpeg. Sin Homebrew:</p>
+    <div class="cmd"><pre><code>curl --proto '=https' --tlsv1.2 -LsSf https://github.com/abelland-lgtm/tbard/releases/latest/download/tbard-installer.sh | sh</code></pre></div>
+  </div>
+
+  <div role="tabpanel" id="p-windows" aria-labelledby="t-windows" hidden>
+    <h3>Scoop</h3>
+    <div class="cmd"><pre><code>scoop bucket add extras; scoop bucket add tbard https://github.com/abelland-lgtm/scoop-bucket; scoop install tbard</code></pre></div>
+    <p class="muted">Instala también mpv y ffmpeg. Sin Scoop, usa el instalador y luego instala mpv y ffmpeg por tu cuenta:</p>
+    <div class="cmd"><pre><code>powershell -ExecutionPolicy Bypass -c "irm https://github.com/abelland-lgtm/tbard/releases/latest/download/tbard-installer.ps1 | iex"</code></pre></div>
+    <p class="muted">También hay un instalador <code>.msi</code> en la <a href="https://github.com/abelland-lgtm/tbard/releases">página de versiones</a>.</p>
+  </div>
+
+  <div role="tabpanel" id="p-other" aria-labelledby="t-other" hidden>
+    <h3>Con Rust</h3>
+    <div class="cmd"><pre><code>cargo install tbard --locked</code></pre></div>
+    <h3>Nix</h3>
+    <div class="cmd"><pre><code>nix run github:abelland-lgtm/tbard</code></pre></div>
+    <h3>Binarios</h3>
+    <p>Para todos los sistemas en la <a href="https://github.com/abelland-lgtm/tbard/releases">página de versiones</a>.</p>
+  </div>
+
+  <h3>Comprobar la instalación</h3>
+  <div class="cmd"><pre><code>tbard doctor</code></pre></div>
+  <p class="muted">Muestra dónde guarda tbard sus archivos y si mpv, ffmpeg y tu sesión están listos.</p>
+</section>
+
+<section id="start">
+  <h2>Primeros pasos</h2>
+  <hr class="rule">
+  <div class="cmd"><pre><code>tbard</code></pre></div>
+  <p>La primera vez, tbard te pide el idioma y tu tienda de Audible, abre el inicio de sesión de Amazon en el navegador
+    y te pide pegar la dirección a la que llegas. Después abre tu biblioteca.</p>
+  <div class="shots">
+    <figure>
+      <img src="../assets/img/welcome.webp" width="1600" height="976" alt="Primer arranque: elegir inglés o español" loading="lazy">
+      <figcaption>Elige tu idioma.</figcaption>
+    </figure>
+    <figure>
+      <img src="../assets/img/store-es.webp" width="1600" height="976" alt="Primer arranque: lista de tiendas de Audible" loading="lazy">
+      <figcaption>Elige tu tienda de Audible e inicia sesión.</figcaption>
+    </figure>
+  </div>
+
+  <h3>Desde la línea de comandos</h3>
+  <ul class="tree">
+    <li><span class="k">login</span><span><code>tbard login --locale es</code> — iniciar sesión (us, uk, ca, au, in, de, fr, it, es, jp, br)</span></li>
+    <li><span class="k">library</span><span><code>tbard library</code> — actualizar y listar tus libros</span></li>
+    <li><span class="k">play</span><span><code>tbard play dune</code> — reproducir, descargando antes si hace falta</span></li>
+    <li><span class="k">download</span><span><code>tbard download proyecto hail</code> — solo descargar</span></li>
+    <li><span class="k">sync</span><span><code>tbard sync</code> — enviar las posiciones pendientes</span></li>
+    <li><span class="k">doctor</span><span><code>tbard doctor</code> — revisar programas, carpetas y sesión</span></li>
+    <li><span class="k">logout</span><span><code>tbard logout</code> — quitar este dispositivo de Amazon y borrar las credenciales</span></li>
+  </ul>
+</section>
+
+<section id="keys">
+  <h2>Teclas</h2>
+  <hr class="rule">
+  <figure>
+    <img src="../assets/img/player-es.webp" width="1600" height="957" alt="El reproductor de tbard: la hora actual en dígitos grandes, el recuadro de reproducción con barras de progreso y la lista de capítulos" loading="lazy">
+    <figcaption>El reproductor.</figcaption>
+  </figure>
+  <div class="grid">
+    <div class="card">
+      <h3>Biblioteca</h3>
+      <ul class="leaders">
+        <li><span>buscar</span><span class="fill"></span><kbd>/</kbd></li>
+        <li><span>sección</span><span class="fill"></span><kbd>1</kbd>–<kbd>5</kbd></li>
+        <li><span>escuchar</span><span class="fill"></span><kbd>⏎</kbd></li>
+        <li><span>descargar</span><span class="fill"></span><kbd>d</kbd></li>
+        <li><span>actualizar</span><span class="fill"></span><kbd>r</kbd></li>
+        <li><span>configuración</span><span class="fill"></span><kbd>c</kbd></li>
+        <li><span>reproductor</span><span class="fill"></span><kbd>tab</kbd></li>
+        <li><span>salir</span><span class="fill"></span><kbd>q</kbd></li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Reproductor</h3>
+      <ul class="leaders">
+        <li><span>pausa</span><span class="fill"></span><kbd>espacio</kbd></li>
+        <li><span>±30 segundos</span><span class="fill"></span><kbd>←</kbd> <kbd>→</kbd></li>
+        <li><span>capítulo</span><span class="fill"></span><kbd>[</kbd> <kbd>]</kbd></li>
+        <li><span>velocidad</span><span class="fill"></span><kbd>+</kbd> <kbd>-</kbd></li>
+        <li><span>volumen</span><span class="fill"></span><kbd>9</kbd> <kbd>0</kbd></li>
+        <li><span>temporizador</span><span class="fill"></span><kbd>t</kbd></li>
+        <li><span>parar</span><span class="fill"></span><kbd>s</kbd></li>
+        <li><span>biblioteca</span><span class="fill"></span><kbd>tab</kbd></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="sync">
+  <h2>Sincronización</h2>
+  <hr class="rule">
+  <ul class="tree">
+    <li><span class="k">al empezar</span><span>tbard usa la posición más reciente entre la local y la de Audible. Si las dos cambiaron desde la última sincronización y se separan más de dos minutos, te pregunta.</span></li>
+    <li><span class="k">escuchando</span><span>la posición se guarda en local cada 5 segundos y se envía a Audible cada 2 minutos, al pausar y al parar.</span></li>
+    <li><span class="k">sin conexión</span><span>las posiciones esperan en una cola y se envían cuando vuelve la conexión (o con <code>tbard sync</code>).</span></li>
+    <li><span class="k">precisión</span><span>los archivos de capítulo coinciden con la app de Audible al milisegundo: el minuto que ves en tbard es el que muestra tu móvil.</span></li>
+  </ul>
+</section>
+
+<section id="privacy">
+  <h2>Privacidad</h2>
+  <hr class="rule">
+  <p>tbard guarda todo en tus propias carpetas de usuario. No se comparte nada con otros usuarios del equipo, y nada sale
+    de él salvo hacia Amazon y Audible. No hay telemetría.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Qué</th><th>Linux</th><th>macOS</th><th>Windows</th></tr></thead>
+      <tbody>
+        <tr><td>Configuración y tema</td><td><code>~/.config/tbard</code></td><td><code>~/Library/Application Support/tbard</code></td><td><code>%APPDATA%\tbard\config</code></td></tr>
+        <tr><td>Credenciales y base de datos</td><td><code>~/.local/share/tbard</code></td><td><code>~/Library/Application Support/tbard</code></td><td><code>%APPDATA%\tbard\data</code></td></tr>
+        <tr><td>Caché de portadas</td><td><code>~/.cache/tbard</code></td><td><code>~/Library/Caches/tbard</code></td><td><code>%LOCALAPPDATA%\tbard\cache</code></td></tr>
+        <tr><td>Registro (log)</td><td><code>~/.local/state/tbard</code></td><td><code>~/Library/Application Support/tbard/logs</code></td><td><code>%LOCALAPPDATA%\tbard\data\logs</code></td></tr>
+        <tr><td>Audiolibros</td><td><code>~/Audiobooks</code></td><td><code>~/Audiobooks</code></td><td><code>%USERPROFILE%\Audiobooks</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="grid">
+    <div class="card invert">
+      <h3>Credenciales</h3>
+      <p>Al iniciar sesión, tbard se registra como un dispositivo en tu cuenta de Amazon, como un móvil con la app de
+        Audible. Sus tokens y su clave privada se guardan cifrados (AES-256-GCM) en <code>credentials.enc</code>; la clave
+        vive en el llavero del sistema (Llavero de macOS, Administrador de credenciales de Windows, GNOME Keyring o
+        KWallet). Una copia del archivo no sirve en otro equipo ni en otra cuenta.</p>
+    </div>
+    <div class="card">
+      <h3>Permisos</h3>
+      <p>En Linux y macOS las carpetas se crean con <code>0700</code> y los archivos privados con <code>0600</code>. En
+        Windows están dentro de tu perfil de usuario. El registro nunca incluye tokens ni enlaces de descarga.</p>
+    </div>
+    <div class="card">
+      <h3>¿Sin llavero?</h3>
+      <p>En un equipo sin llavero (un servidor, un escritorio mínimo) tbard guarda <code>credentials.json</code> sin
+        cifrar, legible solo por ti, y te avisa.</p>
+    </div>
+    <div class="card">
+      <h3>Borrarlo todo</h3>
+      <p>Ejecuta <code>tbard logout</code>: quita el dispositivo de tu cuenta de Amazon y borra las credenciales y la
+        entrada del llavero. Después borra las carpetas de arriba.</p>
+    </div>
+  </div>
+</section>
+
+<section id="config">
+  <h2>Configuración</h2>
+  <hr class="rule">
+  <p><code>config.toml</code> está en la carpeta de configuración. La pantalla de configuración (<kbd>c</kbd>) lo escribe
+    por ti.</p>
+  <pre class="block"><code>library_dir = "~/Audiobooks"   # adónde van las descargas nuevas
+language = "es"                # "en" o "es"
+mpv_path = "/opt/mpv/bin/mpv"  # solo si mpv no está en el PATH
+ffmpeg_path = "C:\\tools\\ffmpeg.exe"</code></pre>
+  <h3>Colores</h3>
+  <p>tbard usa los colores de tu terminal. Para cambiarlos, crea <code>colors.toml</code> junto a
+    <code>config.toml</code>; tbard lo recarga mientras está abierto. Con
+    <a href="https://github.com/noctalia-dev/noctalia-shell">Noctalia</a>, la plantilla incluida lo genera a partir de
+    tu fondo de pantalla.</p>
+  <pre class="block"><code>primary = "#ffb000"
+on_primary = "#1a1200"
+secondary = "#e8c37a"
+tertiary = "#ff7a45"
+error = "#ff5f56"
+on_surface_variant = "#9b8f7a"
+outline = "#5b5142"</code></pre>
+  <figure>
+    <img src="../assets/img/settings-es.webp" width="1600" height="957" alt="La pantalla de configuración con la carpeta de descargas y el idioma" loading="lazy">
+    <figcaption>Configuración: carpeta de descargas e idioma.</figcaption>
+  </figure>
+  <h3>Nix y home-manager</h3>
+  <pre class="block"><code>inputs.tbard.url = "github:abelland-lgtm/tbard";
+
+imports = [ inputs.tbard.homeManagerModules.default ];
+programs.tbard.enable = true;</code></pre>
+</section>
+
+<section id="help">
+  <h2>Problemas</h2>
+  <hr class="rule">
+  <details>
+    <summary>“no se encontró mpv” o “no se encontró ffmpeg”</summary>
+    <div><p>Instálalos (ver <a href="#install">Instalación</a>) o pon <code>mpv_path</code> / <code>ffmpeg_path</code>
+      en <code>config.toml</code>. <code>tbard doctor</code> muestra lo que encuentra.</p></div>
+  </details>
+  <details>
+    <summary>No se abrió la página de inicio de sesión</summary>
+    <div><p>La pantalla de inicio de sesión también muestra la URL: ábrela tú, inicia sesión y pega la dirección final
+      (empieza por <code>https://www.amazon…/ap/maplanding</code>).</p></div>
+  </details>
+  <details>
+    <summary>“sin llavero del sistema”</summary>
+    <div><p>Instala y desbloquea un proveedor de Secret Service (GNOME Keyring o KWallet) y vuelve a iniciar sesión.
+      Mientras tanto, las credenciales se guardan sin cifrar, legibles solo por ti.</p></div>
+  </details>
+  <details>
+    <summary>Las portadas se ven pixeladas</summary>
+    <div><p>Tu terminal no tiene protocolo de gráficos, así que tbard dibuja las portadas con medios bloques. Kitty,
+      Ghostty, WezTerm e iTerm2 muestran imágenes de verdad.</p></div>
+  </details>
+  <details>
+    <summary>La posición no llegó a mi móvil</summary>
+    <div><p>Sin conexión, las posiciones esperan en una cola. Ejecuta <code>tbard sync</code> y vuelve a abrir la app
+      de Audible. El registro (ver <a href="#privacy">Privacidad</a>) dice qué pasó; con <code>TBARD_LOG=debug</code>
+      da más detalle.</p></div>
+  </details>
+  <p>Cualquier otra cosa: <a href="https://github.com/abelland-lgtm/tbard/issues">abre un issue</a>.</p>
+</section>
+
+<section id="thanks">
+  <h2>Inspiración</h2>
+  <hr class="rule">
+  <p>tbard está inspirado en <a href="https://github.com/rmcrackan/Libation">Libation</a> y proyectos similares. Lleva a
+    la terminal la idea de Libation de una biblioteca personal de audiolibros sin DRM, junto con un reproductor y la
+    sincronización de la posición.</p>
+  <ul class="tree">
+    <li><span class="k"><a href="https://github.com/rmcrackan/Libation">Libation</a></span><span>la inspiración principal: una app de escritorio que respalda tu biblioteca de Audible en archivos sin DRM.</span></li>
+    <li><span class="k"><a href="https://github.com/mkb79/audible-cli">audible-cli</a></span><span>y la librería <a href="https://github.com/mkb79/Audible">audible</a>, cuyo trabajo documentando la API de Audible hizo posibles proyectos como este.</span></li>
+    <li><span class="k"><a href="https://github.com/AlbanDAVID/Toutui">Toutui</a></span><span>un reproductor de audiolibros para la terminal que inspiró el reproductor de tbard.</span></li>
+    <li><span class="k"><a href="https://mpv.io">mpv</a> · <a href="https://ffmpeg.org">ffmpeg</a></span><span>la reproducción y el trabajo con el audio.</span></li>
+  </ul>
+  <p class="muted">tbard es una implementación independiente y no contiene código de estos proyectos.</p>
+  <footer>tbard · <a href="https://github.com/abelland-lgtm/tbard/blob/main/LICENSE">GPL-3.0 o posterior</a> · fuentes: JetBrains Mono y Silkscreen (SIL OFL)</footer>
+</section>
+
+</main>
+
+<div class="keybar" aria-hidden="true">
+  <span>[<b>1-9</b>] secciones</span>
+  <span>[<b>L</b>] english</span>
+  <span>[<b>G</b>] github</span>
+  <span class="right"><b>●</b> v0.1.0</span>
+</div>
+
+<script src="../assets/site.js" defer></script>
+</body>
+</html>

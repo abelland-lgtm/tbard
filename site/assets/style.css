@@ -178,18 +178,18 @@ figcaption::before { content: "▸ "; color: var(--accent); }
 
 /* Commands */
 .cmd {
-  position: relative;
+  display: flex;
+  align-items: flex-start;
   margin: 0.6rem 0;
   border-left: 3px solid var(--accent);
   background: var(--raised);
 }
-.cmd pre { margin: 0; padding: 0.8rem 5.5rem 0.8rem 1rem; overflow-x: auto; }
+.cmd pre { flex: 1; min-width: 0; margin: 0; padding: 0.8rem 1rem; overflow-x: auto; }
 .cmd code { font: inherit; }
 .cmd pre::before { content: "$ "; color: var(--accent); }
 .cmd .copy {
-  position: absolute;
-  top: 0.45rem;
-  right: 0.45rem;
+  flex: none;
+  margin: 0.45rem 0.45rem 0 0;
   padding: 0.15rem 0.5rem;
   font-size: 0.8rem;
 }

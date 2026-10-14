@@ -107,7 +107,7 @@ mod tests {
         );
         // Both changed but are close: the most recent, without asking.
         assert_eq!(decide(l(10 * min, 400_000, Some(100)), r(11 * min, 500_000)), Decision::Start(11 * min));
-        // Nunca sincronizado y lejos: preguntar.
+        // Never synced and far apart: ask.
         assert_eq!(decide(l(30 * min, 2, None), r(0, 1)), Decision::Ask { local: 30 * min, remote: 0 });
     }
 }
@@ -152,7 +152,7 @@ mod flow_tests {
         let log = seen.clone();
         tokio::spawn(async move {
             while let Ok((mut sock, _)) = listener.accept().await {
-                // Cabeceras y cuerpo pueden llegar en lecturas distintas.
+                // Headers and body may arrive in separate reads.
                 let mut req = Vec::new();
                 let mut buf = [0u8; 4096];
                 while let Ok(Ok(n @ 1..)) =

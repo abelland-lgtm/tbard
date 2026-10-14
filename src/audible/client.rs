@@ -65,7 +65,7 @@ impl Client {
             let transient = status.is_server_error() || status == reqwest::StatusCode::TOO_MANY_REQUESTS;
             if transient && attempt < 2 {
                 attempt += 1;
-                tracing::warn!("{method} {path}: {status}, reintento {attempt}");
+                tracing::warn!("{method} {path}: {status}, retry {attempt}");
                 tokio::time::sleep(std::time::Duration::from_secs(1 << attempt)).await;
                 continue;
             }

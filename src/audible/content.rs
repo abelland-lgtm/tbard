@@ -78,7 +78,7 @@ fn flatten(chapters: &Value, prefix: &str) -> Vec<Chapter> {
 }
 
 /// Decrypts the AAXC voucher. The AES-128-CBC key and IV are the SHA-256 of
-/// `device_type + serial + customer_id + asin` (bytes 0..16 y 16..32).
+/// `device_type + serial + customer_id + asin` (bytes 0..16 and 16..32).
 pub fn decrypt_voucher(auth: &Auth, asin: &str, voucher_b64: &str) -> Result<(String, String)> {
     let digest = voucher_digest(auth, asin);
     let mut buf = STANDARD.decode(voucher_b64)?;
