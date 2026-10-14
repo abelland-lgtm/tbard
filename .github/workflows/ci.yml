@@ -33,3 +33,12 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check licenses
+
+  # Fails when release.yml or wix/main.wxs are stale (e.g. after editing Cargo.toml
+  # metadata); fix with `dist generate`.
+  dist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: "curl --proto '=https' --tlsv1.2 -LsSf https://github.com/axodotdev/cargo-dist/releases/download/v0.33.0/cargo-dist-installer.sh | sh"
+      - run: dist plan

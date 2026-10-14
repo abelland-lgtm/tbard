@@ -173,7 +173,7 @@
         <!--<Icon Id='ProductICO' SourceFile='wix\Product.ico'/>-->
         <!--<Property Id='ARPPRODUCTICON' Value='ProductICO' />-->
 
-        <Property Id='ARPHELPLINK' Value='https://github.com/abelland-lgtm/tbard'/>
+        <Property Id='ARPHELPLINK' Value='https://abelland-lgtm.github.io/tbard/'/>
         
         <UI>
             <UIRef Id='WixUI_FeatureTree'/>
