@@ -14,18 +14,18 @@ pub struct Chapter {
     pub length_ms: i64,
 }
 
-/// Licencia de descarga concedida para un libro.
+/// A download license granted for a book.
 pub struct License {
     pub acr: String,
     pub offline_url: String,
     pub content_format: String,
-    /// Clave e IV AAXC en hex, listos para `ffmpeg -audible_key/-audible_iv`.
+    /// AAXC key and IV in hex, ready for `ffmpeg -audible_key/-audible_iv`.
     pub key: String,
     pub iv: String,
     pub chapters: Vec<Chapter>,
 }
 
-/// Pide la licencia en máxima calidad: `High` concede el mejor de `available_codecs`.
+/// Requests the license in the best quality: `High` grants the best of `available_codecs`.
 pub async fn license(client: &Client, asin: &str) -> Result<License> {
     let body = json!({
         "consumption_type": "Download",
@@ -34,22 +34,17 @@ pub async fn license(client: &Client, asin: &str) -> Result<License> {
         "chapter_titles_type": "Tree",
         "response_groups": "content_reference,chapter_info",
     });
-    let res = client
-        .request(Method::POST, &format!("1.0/content/{asin}/licenserequest"), &[], Some(&body))
-        .await?;
+    let res = client.request(Method::POST, &format!("1.0/content/{asin}/licenserequest"), &[], Some(&body)).await?;
     let lic = &res["content_license"];
     if lic["status_code"].as_str() != Some("Granted") {
-        bail!("licencia denegada: {}", lic["message"]);
+        bail!("{}: {}", crate::i18n::tr("Audible denied the download", "Audible denegó la descarga"), lic["message"]);
     }
     let meta = &lic["content_metadata"];
-    let (key, iv) = decrypt_voucher(
-        client.auth(),
-        asin,
-        lic["license_response"].as_str().context("sin license_response")?,
-    )?;
+    let (key, iv) =
+        decrypt_voucher(client.auth(), asin, lic["license_response"].as_str().context("no license_response")?)?;
     Ok(License {
-        acr: lic["acr"].as_str().context("sin acr")?.to_owned(),
-        offline_url: meta["content_url"]["offline_url"].as_str().context("sin offline_url")?.to_owned(),
+        acr: lic["acr"].as_str().context("no acr")?.to_owned(),
+        offline_url: meta["content_url"]["offline_url"].as_str().context("no offline_url")?.to_owned(),
         content_format: meta["content_reference"]["content_format"].as_str().unwrap_or_default().to_owned(),
         key,
         iv,
@@ -57,9 +52,9 @@ pub async fn license(client: &Client, asin: &str) -> Result<License> {
     })
 }
 
-/// Aplana el árbol de capítulos: las partes con subcapítulos se convierten en
-/// hojas "Parte – Capítulo". El tramo propio de una parte (antes de su primer
-/// subcapítulo) se conserva como capítulo aparte para no perder audio.
+/// Flattens the chapter tree: parts with sub-chapters become "Part – Chapter"
+/// leaves. A part's own stretch (before its first sub-chapter) is kept as a
+/// chapter of its own so no audio is lost.
 fn flatten(chapters: &Value, prefix: &str) -> Vec<Chapter> {
     let mut out = Vec::new();
     for ch in chapters.as_array().into_iter().flatten() {
@@ -82,22 +77,22 @@ fn flatten(chapters: &Value, prefix: &str) -> Vec<Chapter> {
     out
 }
 
-/// Descifra el voucher AAXC. Clave e IV del AES-128-CBC = SHA-256 de
+/// Decrypts the AAXC voucher. The AES-128-CBC key and IV are the SHA-256 of
 /// `device_type + serial + customer_id + asin` (bytes 0..16 y 16..32).
 pub fn decrypt_voucher(auth: &Auth, asin: &str, voucher_b64: &str) -> Result<(String, String)> {
     let digest = voucher_digest(auth, asin);
     let mut buf = STANDARD.decode(voucher_b64)?;
     buf.truncate(buf.len() / 16 * 16);
     let plain = cbc::Decryptor::<aes::Aes128>::new_from_slices(&digest[..16], &digest[16..])
-        .map_err(|_| anyhow::anyhow!("clave inválida"))?
+        .map_err(|_| anyhow::anyhow!("invalid key"))?
         .decrypt_padded::<NoPadding>(&mut buf)
-        .map_err(|_| anyhow::anyhow!("voucher corrupto"))?;
-    // El JSON va seguido de relleno: se corta en la última llave.
-    let end = plain.iter().rposition(|&b| b == b'}').context("voucher sin JSON")? + 1;
-    let v: Value = serde_json::from_slice(&plain[..end]).context("voucher ilegible")?;
+        .map_err(|_| anyhow::anyhow!("corrupt voucher"))?;
+    // The JSON is followed by padding: cut at the last brace.
+    let end = plain.iter().rposition(|&b| b == b'}').context("voucher without JSON")? + 1;
+    let v: Value = serde_json::from_slice(&plain[..end]).context("unreadable voucher")?;
     Ok((
-        v["key"].as_str().context("voucher sin key")?.to_owned(),
-        v["iv"].as_str().context("voucher sin iv")?.to_owned(),
+        v["key"].as_str().context("voucher without key")?.to_owned(),
+        v["iv"].as_str().context("voucher without iv")?.to_owned(),
     ))
 }
 

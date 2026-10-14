@@ -2,14 +2,14 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-/// Credenciales de un dispositivo registrado en Audible.
+/// Credentials of a device registered on Audible.
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Auth {
     pub access_token: String,
     pub refresh_token: String,
     pub adp_token: String,
     pub device_private_key: String,
-    /// Caducidad del access_token, en segundos epoch.
+    /// Expiry of the access_token, in epoch seconds.
     pub expires: f64,
     pub locale_code: String,
     pub device_info: DeviceInfo,
@@ -32,12 +32,11 @@ pub struct CustomerInfo {
 
 impl Auth {
     pub fn load(path: &Path) -> Result<Self> {
-        let raw = std::fs::read(path)
-            .with_context(|| format!("no hay sesión en {} (ejecuta `tbard login`)", path.display()))?;
-        serde_json::from_slice(&raw).context("auth.json inválido")
+        let raw = std::fs::read(path).with_context(|| format!("cannot read {}", path.display()))?;
+        serde_json::from_slice(&raw).context("invalid credentials file")
     }
 
-    /// Dominio de la tienda según el país (`us` → `com`).
+    /// The store's domain for the country (`us` → `com`).
     pub fn tld(&self) -> &'static str {
         tld(&self.locale_code)
     }

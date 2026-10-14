@@ -4,14 +4,17 @@ use crate::{
 };
 use anyhow::Result;
 
-/// Si local y remota difieren más que esto y ambas cambiaron, se pregunta.
+/// If local and remote differ by more than this and both changed, ask.
 const ASK_THRESHOLD_MS: i64 = 2 * 60_000;
 
 #[derive(Debug, PartialEq)]
 pub enum Decision {
     Start(i64),
-    /// Ambas cambiaron desde el último sync y están lejos: elegir el usuario.
-    Ask { local: i64, remote: i64 },
+    /// Both changed since the last sync and are far apart: the user chooses.
+    Ask {
+        local: i64,
+        remote: i64,
+    },
 }
 
 pub fn decide(local: Option<LocalPos>, remote: Option<RemotePos>) -> Decision {
@@ -21,8 +24,8 @@ pub fn decide(local: Option<LocalPos>, remote: Option<RemotePos>) -> Decision {
         (None, Some(r)) => Decision::Start(r.position_ms),
         (Some(l), Some(r)) => {
             let synced = l.synced_ms.unwrap_or(i64::MIN);
-            // Audible guarda su propia hora de escritura: si no es posterior a
-            // nuestro último sync, el cambio remoto es el nuestro.
+            // Audible stores its own write time: if it is not later than our
+            // last sync, the remote change is ours.
             let local_changed = l.updated_ms > synced;
             let remote_changed = r.updated_ms > synced + 5_000;
             if local_changed && remote_changed && (l.position_ms - r.position_ms).abs() > ASK_THRESHOLD_MS {
@@ -36,30 +39,30 @@ pub fn decide(local: Option<LocalPos>, remote: Option<RemotePos>) -> Decision {
     }
 }
 
-/// Decide desde dónde empezar con la posición local y la de Audible. Sin red,
-/// usa la local.
+/// Decides where to start from the local and the Audible position. Offline,
+/// uses the local one.
 pub async fn start(client: &Client, db: &Db, asin: &str) -> Result<(Decision, bool)> {
     let remote = positions::last(client, asin).await;
     let online = remote.is_ok();
     Ok((decide(db.position(asin)?, remote.ok().flatten()), online))
 }
 
-/// Envía una posición; si falla (sin red, etc.) queda en la cola.
+/// Sends a position; if that fails (offline, etc.) it stays queued.
 pub async fn push(client: &Client, db: &Db, asin: &str, acr: &str, position_ms: i64) -> bool {
     match positions::put(client, asin, acr, position_ms).await {
         Ok(()) => {
-            tracing::info!("{asin}: posición {position_ms} enviada");
+            tracing::info!("{asin}: position {position_ms} sent");
             db.mark_synced(asin, position_ms, now_ms()).is_ok()
         }
         Err(e) => {
-            tracing::warn!("{asin}: no se pudo enviar {position_ms} ({e:#}); queda en cola");
+            tracing::warn!("{asin}: could not send {position_ms} ({e:#}); queued");
             let _ = db.enqueue(asin, acr, position_ms);
             false
         }
     }
 }
 
-/// Reintenta los envíos pendientes. Devuelve cuántos quedan.
+/// Retries the queued positions. Returns how many are left.
 pub async fn flush(client: &Client, db: &Db) -> Result<usize> {
     let pending = db.pending()?;
     let mut left = 0;
@@ -89,28 +92,28 @@ mod tests {
     #[test]
     fn decide_cases() {
         let min = 60_000;
-        // Solo una fuente.
+        // Only one source.
         assert_eq!(decide(None, None), Decision::Start(0));
         assert_eq!(decide(l(5, 1, None), None), Decision::Start(5));
         assert_eq!(decide(None, r(7, 1)), Decision::Start(7));
-        // Escuchado en el móvil después del último sync: gana el remoto.
+        // Listened on the phone after the last sync: remote wins.
         assert_eq!(decide(l(10 * min, 100, Some(100)), r(30 * min, 500_000)), Decision::Start(30 * min));
-        // Escuchado aquí sin poder enviar: gana el local.
+        // Listened here without being able to send: local wins.
         assert_eq!(decide(l(30 * min, 500_000, Some(100)), r(10 * min, 100)), Decision::Start(30 * min));
-        // Ambos cambiaron y están lejos: preguntar.
+        // Both changed and are far apart: ask.
         assert_eq!(
             decide(l(30 * min, 400_000, Some(100)), r(10 * min, 500_000)),
             Decision::Ask { local: 30 * min, remote: 10 * min }
         );
-        // Ambos cambiaron pero están cerca: el más reciente, sin preguntar.
+        // Both changed but are close: the most recent, without asking.
         assert_eq!(decide(l(10 * min, 400_000, Some(100)), r(11 * min, 500_000)), Decision::Start(11 * min));
         // Nunca sincronizado y lejos: preguntar.
         assert_eq!(decide(l(30 * min, 2, None), r(0, 1)), Decision::Ask { local: 30 * min, remote: 0 });
     }
 }
 
-/// Flujo completo contra un servidor HTTP local: sin red se encola, con red se
-/// vacía la cola y la petición va firmada.
+/// The whole flow against a local HTTP server: offline it queues, online the
+/// queue drains and the request is signed.
 #[cfg(test)]
 mod flow_tests {
     use super::*;
@@ -141,7 +144,7 @@ mod flow_tests {
         Client::from_auth(auth).unwrap().with_base(base)
     }
 
-    /// Responde 200 vacío a todo y guarda las peticiones recibidas.
+    /// Answers an empty 200 to everything and records the requests.
     async fn server() -> (String, Arc<Mutex<Vec<String>>>) {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}", listener.local_addr().unwrap());
@@ -167,7 +170,7 @@ mod flow_tests {
     #[tokio::test]
     async fn offline_queues_then_flush_sends_signed() {
         let db = Db::memory().unwrap();
-        // Puerto 1 cerrado: equivale a no tener red.
+        // Port 1 is closed: same as having no network.
         assert!(!push(&client("http://127.0.0.1:1"), &db, "A", "acr", 42_000).await);
         assert_eq!(db.pending().unwrap().len(), 1);
 

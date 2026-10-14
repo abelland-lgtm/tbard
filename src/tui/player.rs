@@ -10,17 +10,17 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// Temporizador de apagado.
+/// Sleep timer.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Timer {
     Off,
     At(Instant),
-    /// Pausar al terminar el capítulo con este índice.
+    /// Pause when the chapter with this index ends.
     EndOfChapter(usize),
 }
 
 impl Timer {
-    /// Off → 15 → 30 → 45 → 60 min → fin de capítulo → Off.
+    /// Off → 15 → 30 → 45 → 60 min → end of chapter → Off.
     pub fn next(self, now: Instant, chapter: usize) -> Self {
         let mins = |m: u64| Self::At(now + Duration::from_secs(m * 60));
         match self {
@@ -35,7 +35,7 @@ impl Timer {
         }
     }
 
-    /// ¿Hay que pausar ya?
+    /// Is it time to pause?
     pub fn due(self, now: Instant, chapter: usize) -> bool {
         match self {
             Self::Off => false,
@@ -45,7 +45,7 @@ impl Timer {
     }
 }
 
-/// Reproducción en curso dentro de la TUI.
+/// The book playing inside the TUI.
 pub struct Player {
     pub mpv: Mpv,
     pub session: Session,
@@ -54,7 +54,7 @@ pub struct Player {
     pub socket: PathBuf,
     pub settings: Settings,
     pub timer: Timer,
-    /// Último envío a Audible: None = aún no, Some(true) = bien.
+    /// Last push to Audible: None = not yet, Some(true) = succeeded.
     pub synced: Option<bool>,
 }
 
@@ -68,7 +68,7 @@ impl Player {
         self.seek(target).await
     }
 
-    /// `[`: al inicio del capítulo, o al anterior si ya estaba al inicio.
+    /// `[`: to the start of the chapter, or the previous one if already there.
     pub async fn prev_chapter(&mut self) -> Result<()> {
         let (idx, offset) = locate(&self.session.files, self.session.pos);
         let idx = if offset > 3_000 { idx } else { idx.saturating_sub(1) };

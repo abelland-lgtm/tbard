@@ -107,9 +107,7 @@ impl Mpv {
         for (i, f) in files.iter().enumerate() {
             if i == idx {
                 // `--start` only for the first file: options between --{ and --} are per-file.
-                cmd.args(["--{", &format!("--start={}", offset_ms as f64 / 1000.0)])
-                    .arg(dir.join(&f.file))
-                    .arg("--}");
+                cmd.args(["--{", &format!("--start={}", offset_ms as f64 / 1000.0)]).arg(dir.join(&f.file)).arg("--}");
             } else {
                 cmd.arg(dir.join(&f.file));
             }

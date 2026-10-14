@@ -1,4 +1,6 @@
-use crate::db::Book;
+//! Library sections (sidebar) and fuzzy search.
+
+use crate::{db::Book, i18n::tr};
 use fuzzy_matcher::{skim::SkimMatcherV2, FuzzyMatcher};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -11,7 +13,7 @@ pub enum Filter {
 }
 
 impl Filter {
-    /// Secciones del menú lateral, en orden (teclas 1–5).
+    /// Sidebar sections, in order (keys 1–5).
     pub const ALL: [Self; 5] = [Self::All, Self::InProgress, Self::Downloaded, Self::NotDownloaded, Self::Finished];
 
     pub fn next(self) -> Self {
@@ -26,11 +28,11 @@ impl Filter {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::All => "Biblioteca",
-            Self::InProgress => "En curso",
-            Self::Downloaded => "Descargados",
-            Self::NotDownloaded => "Sin descargar",
-            Self::Finished => "Terminados",
+            Self::All => tr("Library", "Biblioteca"),
+            Self::InProgress => tr("In progress", "En curso"),
+            Self::Downloaded => tr("Downloaded", "Descargados"),
+            Self::NotDownloaded => tr("In the cloud", "Sin descargar"),
+            Self::Finished => tr("Finished", "Terminados"),
         }
     }
 
@@ -49,8 +51,8 @@ impl Filter {
     }
 }
 
-/// Índices de los libros visibles. Sin búsqueda se respeta el orden de la base
-/// de datos (escuchados recientemente primero); con búsqueda, por relevancia.
+/// Indexes of the visible books. Without a query the database order is kept
+/// (most recently listened first); with one, by relevance.
 pub fn visible(books: &[Book], filter: Filter, query: &str) -> Vec<usize> {
     let candidates = books.iter().enumerate().filter(|(_, b)| filter.matches(b));
     if query.is_empty() {
@@ -58,9 +60,7 @@ pub fn visible(books: &[Book], filter: Filter, query: &str) -> Vec<usize> {
     }
     let m = SkimMatcherV2::default();
     let mut scored: Vec<_> = candidates
-        .filter_map(|(i, b)| {
-            m.fuzzy_match(&format!("{} {} {}", b.title, b.authors, b.series), query).map(|s| (s, i))
-        })
+        .filter_map(|(i, b)| m.fuzzy_match(&format!("{} {} {}", b.title, b.authors, b.series), query).map(|s| (s, i)))
         .collect();
     scored.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
     scored.into_iter().map(|(_, i)| i).collect()

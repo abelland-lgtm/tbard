@@ -15,7 +15,7 @@ pub struct LibraryItem {
 
 const PAGE: usize = 500;
 
-/// Biblioteca completa (solo libros; podcasts fuera).
+/// The whole library (books only; podcasts are left out).
 pub async fn fetch(client: &Client) -> Result<Vec<LibraryItem>> {
     let mut out = Vec::new();
     for page in 1.. {
@@ -33,7 +33,7 @@ pub async fn fetch(client: &Client) -> Result<Vec<LibraryItem>> {
             .await?;
         let items = res["items"].as_array().cloned().unwrap_or_default();
         out.extend(items.iter().filter_map(parse));
-        // La API no devuelve total_results: se pagina hasta una página incompleta.
+        // The API does not return total_results: page until a page comes back short.
         if items.len() < PAGE {
             break;
         }
@@ -63,7 +63,7 @@ fn parse(item: &Value) -> Option<LibraryItem> {
     })
 }
 
-/// Une los nombres, quitando los roles secundarios ("Fulano - translator").
+/// Joins the names, dropping secondary roles ("Someone - translator").
 fn names(list: &Value) -> String {
     list.as_array()
         .into_iter()

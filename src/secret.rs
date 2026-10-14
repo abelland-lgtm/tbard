@@ -84,9 +84,8 @@ fn cipher(key_b64: &str) -> Result<Aes256Gcm> {
 
 fn encrypt(key_b64: &str, plain: &[u8]) -> Result<Vec<u8>> {
     let nonce: [u8; 12] = rand::random();
-    let data = cipher(key_b64)?
-        .encrypt(&Nonce::from(nonce), plain)
-        .map_err(|_| anyhow::anyhow!("encryption failed"))?;
+    let data =
+        cipher(key_b64)?.encrypt(&Nonce::from(nonce), plain).map_err(|_| anyhow::anyhow!("encryption failed"))?;
     let env = Envelope { v: 1, nonce: STANDARD.encode(nonce), data: STANDARD.encode(data) };
     Ok(serde_json::to_vec(&env)?)
 }
@@ -129,6 +128,11 @@ pub fn save(dir: &Path, auth: &Auth, keys: &dyn KeyStore) -> Result<Protection> 
     };
     let _ = std::fs::remove_file(dir.join(LEGACY));
     Ok(protection)
+}
+
+/// Whether any saved credentials exist in `dir` (without decrypting them).
+pub fn exists(dir: &Path) -> bool {
+    [ENCRYPTED, PLAIN, LEGACY].iter().any(|name| dir.join(name).exists())
 }
 
 /// Loads the credentials from `dir`, migrating the old plain `auth.json`.

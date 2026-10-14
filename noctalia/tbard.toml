@@ -1,6 +1,6 @@
-# Plantilla de Noctalia → ~/.config/tbard/colors.toml. tbard la relee en vivo.
-# Sin surface/on_surface: el fondo y el texto los pone la terminal (que ya
-# usa la paleta de Noctalia) y así se respeta su transparencia.
+# Noctalia template → ~/.config/tbard/colors.toml; tbard reloads it live.
+# No surface/on_surface: the terminal (already themed by Noctalia) keeps the
+# background and text colors, so its transparency is preserved.
 primary = "{{colors.primary.default.hex}}"
 on_primary = "{{colors.on_primary.default.hex}}"
 secondary = "{{colors.secondary.default.hex}}"

@@ -6,7 +6,7 @@ use std::{
     sync::{Mutex, MutexGuard},
 };
 
-/// SQLite tras un Mutex: así `&Db` cruza `await`s en tareas de tokio.
+/// SQLite behind a Mutex, so `&Db` can cross `await`s in tokio tasks.
 pub struct Db(Mutex<Connection>);
 
 #[derive(Debug, Clone)]
@@ -18,11 +18,11 @@ pub struct Book {
     pub runtime_ms: i64,
     pub percent_complete: f64,
     pub cover_url: Option<String>,
-    /// Carpeta con los capítulos descargados.
+    /// Folder with the downloaded chapters.
     pub path: Option<PathBuf>,
     pub acr: Option<String>,
     pub content_format: Option<String>,
-    /// Posición local, si se ha escuchado aquí.
+    /// Local position, if listened to here.
     pub position_ms: Option<i64>,
 }
 
@@ -36,7 +36,7 @@ impl Book {
     }
 }
 
-/// Velocidad y volumen recordados por libro.
+/// Speed and volume remembered per book.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Settings {
     pub speed: f64,
@@ -49,12 +49,12 @@ impl Default for Settings {
     }
 }
 
-/// Posición guardada en local.
+/// Position saved locally.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LocalPos {
     pub position_ms: i64,
     pub updated_ms: i64,
-    /// Última vez que se envió o recibió de Audible.
+    /// Last time it was sent to or received from Audible.
     pub synced_ms: Option<i64>,
 }
 
@@ -95,11 +95,11 @@ impl Db {
     }
 
     fn c(&self) -> MutexGuard<'_, Connection> {
-        // Una consulta que entró en pánico no deja la conexión inconsistente.
+        // A query that panicked does not leave the connection inconsistent.
         self.0.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// Actualiza el catálogo sin tocar lo descargado (path, acr).
+    /// Updates the catalog without touching download info (path, acr).
     pub fn upsert_books(&self, items: &[LibraryItem]) -> Result<()> {
         let mut c = self.c();
         let tx = c.transaction()?;
@@ -112,7 +112,14 @@ impl Db {
             )?;
             for i in items {
                 st.execute(params![
-                    i.asin, i.title, i.authors, i.narrators, i.series, i.runtime_ms, i.percent_complete, i.cover_url
+                    i.asin,
+                    i.title,
+                    i.authors,
+                    i.narrators,
+                    i.series,
+                    i.runtime_ms,
+                    i.percent_complete,
+                    i.cover_url
                 ])?;
             }
         }
@@ -124,8 +131,8 @@ impl Db {
         Ok(self.c().query_row("SELECT COUNT(*) FROM books", [], |r| r.get::<_, i64>(0))? == 0)
     }
 
-    /// Libros cuyo título, autor o serie contienen `query` (sin distinguir
-    /// mayúsculas), los escuchados más recientemente primero.
+    /// Books whose title, author or series contain `query` (case-insensitive),
+    /// most recently listened first.
     pub fn search(&self, query: &str) -> Result<Vec<Book>> {
         let c = self.c();
         let mut st = c.prepare(
@@ -198,7 +205,7 @@ impl Db {
         Ok(())
     }
 
-    /// Marca la posición como igual a la de Audible en `now_ms`.
+    /// Marks the position as equal to Audible's at `now_ms`.
     pub fn mark_synced(&self, asin: &str, position_ms: i64, now_ms: i64) -> Result<()> {
         self.c().execute(
             "INSERT INTO positions (asin, position_ms, updated_ms, synced_ms) VALUES (?1, ?2, ?3, ?3)
@@ -209,7 +216,7 @@ impl Db {
         Ok(())
     }
 
-    /// Encola un envío fallido; solo importa el último por libro.
+    /// Queues a failed push; only the latest per book matters.
     pub fn enqueue(&self, asin: &str, acr: &str, position_ms: i64) -> Result<()> {
         self.c().execute(
             "INSERT INTO pending_positions (asin, acr, position_ms) VALUES (?1, ?2, ?3)

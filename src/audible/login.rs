@@ -1,4 +1,4 @@
-//! Registro de tbard como dispositivo de Audible (flujo OAuth con PKCE en el navegador).
+//! Registers tbard as an Audible device (OAuth with PKCE in the browser).
 
 use super::{
     auth::{tld, Auth, CustomerInfo, DeviceInfo},
@@ -26,7 +26,7 @@ fn marketplace(locale: &str) -> Result<&'static str> {
         "jp" => "A1QAP3MOU4173J",
         "es" => "ALMIKO4SZCSAR",
         "br" => "A10J1VAYUDTYRN",
-        _ => bail!("país no soportado: {locale}"),
+        _ => bail!("{}: {locale}", crate::i18n::tr("unsupported store", "tienda no soportada")),
     })
 }
 
@@ -37,7 +37,7 @@ pub struct Pending {
     verifier: String,
 }
 
-/// Prepara la URL de inicio de sesión de Amazon para este dispositivo nuevo.
+/// Builds the Amazon sign-in URL for a new device.
 pub fn start(locale: &str) -> Result<Pending> {
     let serial = hex::encode_upper(rand::random::<[u8; 16]>());
     let verifier = URL_SAFE_NO_PAD.encode(rand::random::<[u8; 32]>());
@@ -73,17 +73,20 @@ fn client_id(serial: &str) -> String {
     hex::encode(format!("{serial}#{DEVICE_TYPE}"))
 }
 
-/// Saca el código de autorización de la URL final (`…/ap/maplanding?…`).
+/// Extracts the authorization code from the final URL (`…/ap/maplanding?…`).
 fn authorization_code(redirect: &str) -> Result<String> {
     Url::parse(redirect.trim())
-        .context("no es una URL")?
+        .context(crate::i18n::tr("that is not a URL", "eso no es una URL"))?
         .query_pairs()
         .find(|(k, _)| k == "openid.oa2.authorization_code")
         .map(|(_, v)| v.into_owned())
-        .context("la URL no trae openid.oa2.authorization_code")
+        .context(crate::i18n::tr(
+            "the URL has no openid.oa2.authorization_code; copy the whole address",
+            "la URL no trae openid.oa2.authorization_code; copia la dirección completa",
+        ))
 }
 
-/// Registra el dispositivo con el código obtenido y devuelve las credenciales.
+/// Registers the device with the code and returns its credentials.
 pub async fn finish(http: &reqwest::Client, p: &Pending, redirect: &str) -> Result<Auth> {
     let code = authorization_code(redirect)?;
     let tld = tld(&p.locale);
@@ -110,20 +113,15 @@ pub async fn finish(http: &reqwest::Client, p: &Pending, redirect: &str) -> Resu
         },
         "requested_extensions": ["device_info", "customer_info"],
     });
-    let res: Value = http
-        .post(format!("https://api.amazon.{tld}/auth/register"))
-        .json(&body)
-        .send()
-        .await?
-        .json()
-        .await?;
+    let res: Value =
+        http.post(format!("https://api.amazon.{tld}/auth/register")).json(&body).send().await?.json().await?;
     let ok = &res["response"]["success"];
     if ok.is_null() {
-        bail!("registro rechazado: {res}");
+        bail!("{}: {res}", crate::i18n::tr("Amazon rejected the registration", "Amazon rechazó el registro"));
     }
     let tokens = &ok["tokens"];
     let ext = &ok["extensions"];
-    let str_ = |v: &Value| v.as_str().map(str::to_owned).context("respuesta de registro incompleta");
+    let str_ = |v: &Value| v.as_str().map(str::to_owned).context("incomplete registration response");
     let expires_in = match &tokens["bearer"]["expires_in"] {
         Value::String(s) => s.parse().unwrap_or(3600.0),
         v => v.as_f64().unwrap_or(3600.0),
@@ -174,9 +172,12 @@ pub async fn deregister(http: &reqwest::Client, auth: &Auth) -> Result<()> {
     Ok(())
 }
 
-/// Solo para desarrollo: reutiliza un auth file de `audible quickstart` (sin cifrar).
+/// Reuses an unencrypted credentials file from `audible quickstart`.
 pub fn import(from: &Path) -> Result<Auth> {
-    Auth::load(from).context("auth file de audible-cli ilegible (¿está cifrado?)")
+    Auth::load(from).context(crate::i18n::tr(
+        "cannot read the audible-cli file (is it encrypted?)",
+        "no se puede leer el archivo de audible-cli (¿está cifrado?)",
+    ))
 }
 
 #[cfg(test)]

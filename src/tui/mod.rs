@@ -1,4 +1,7 @@
+//! The terminal UI: first-run onboarding, library, player and settings.
+
 mod library;
+mod onboarding;
 mod player;
 mod theme;
 mod view;
@@ -8,6 +11,7 @@ use crate::{
     config::Paths,
     db::{Book, Db},
     download::{self, Downloaded, Progress},
+    i18n::{self, tr, Lang},
     player::{Mpv, Options},
     session::Session,
     sync::{self, Decision},
@@ -27,7 +31,7 @@ use std::{
 use theme::Theme;
 use tokio::sync::{mpsc, Semaphore};
 
-/// Mensajes de las tareas en segundo plano al bucle de la UI.
+/// Messages from background tasks to the UI loop.
 enum Msg {
     Library(Result<Vec<LibraryItem>>),
     Progress(String, Progress),
@@ -47,9 +51,13 @@ enum View {
     Library,
     Player,
     Settings,
+    Language,
 }
 
-/// Elección pendiente entre la posición local y la de Audible.
+/// Number of options on the settings screen: download folder, language.
+const SETTINGS: usize = 2;
+
+/// A pending choice between the local and the Audible position.
 struct Ask {
     asin: String,
     local: i64,
@@ -62,7 +70,8 @@ pub struct App {
     db: Db,
     tx: mpsc::UnboundedSender<Msg>,
     theme: Theme,
-    /// Fecha de `colors.toml` cargada: Noctalia lo reescribe al cambiar de fondo.
+    /// Modification time of the loaded `colors.toml`: Noctalia rewrites it
+    /// when the wallpaper changes, and the theme reloads live.
     theme_mtime: Option<std::time::SystemTime>,
     books: Vec<Book>,
     visible: Vec<usize>,
@@ -70,11 +79,15 @@ pub struct App {
     filter: Filter,
     query: String,
     searching: bool,
-    /// Texto de la opción de configuración que se está editando.
+    /// Selected option on the settings screen.
+    settings_sel: usize,
+    /// Text of the setting being edited.
     editing: Option<String>,
+    /// Highlighted language in the picker.
+    lang_sel: usize,
     downloads: HashMap<String, Dl>,
     download_slot: Arc<Semaphore>,
-    /// Libro a reproducir en cuanto termine su descarga.
+    /// Book to start playing as soon as its download finishes.
     play_after: Option<String>,
     picker: Picker,
     cover: Option<(String, StatefulProtocol)>,
@@ -87,18 +100,28 @@ pub struct App {
     quit: bool,
 }
 
-pub async fn run(paths: Paths) -> Result<()> {
+pub async fn run(mut paths: Paths) -> Result<()> {
+    let mut terminal = ratatui::init();
+    let res = start(&mut terminal, &mut paths).await;
+    ratatui::restore();
+    res
+}
+
+async fn start(terminal: &mut ratatui::DefaultTerminal, paths: &mut Paths) -> Result<()> {
+    // Kitty/Ghostty/Sixel graphics when the terminal answers the query; half blocks otherwise.
+    // shortcut: if the terminal never answers (e.g. tmux without a real terminal), ratatui-image's
+    // query thread keeps reading stdin and swallows the first key press; acceptable.
+    let picker = Picker::from_query_stdio().unwrap_or_else(|_| Picker::halfblocks());
+    let theme = Theme::load(&paths.config.join("colors.toml"));
+    if !onboarding::run(terminal, paths, &theme).await? {
+        return Ok(());
+    }
+    let paths = paths.clone();
     let client = Arc::new(Client::open(&paths.data)?);
     let db = Db::open(&paths.db())?;
     let (tx, mut rx) = mpsc::unbounded_channel();
-
-    let mut terminal = ratatui::init();
-    // Kitty/Ghostty/Sixel si la terminal responde; si no, medios bloques.
-    // shortcut: si la terminal no contesta (p. ej. tmux sin terminal real), el hilo de
-    // consulta de ratatui-image se queda leyendo y se come la primera tecla; aceptable.
-    let picker = Picker::from_query_stdio().unwrap_or_else(|_| Picker::halfblocks());
     let mut app = App {
-        theme: Theme::load(&paths.config.join("colors.toml")),
+        theme,
         theme_mtime: mtime(&paths.config.join("colors.toml")),
         paths,
         client,
@@ -110,7 +133,9 @@ pub async fn run(paths: Paths) -> Result<()> {
         filter: Filter::All,
         query: String::new(),
         searching: false,
+        settings_sel: 0,
         editing: None,
+        lang_sel: 0,
         downloads: HashMap::new(),
         download_slot: Arc::new(Semaphore::new(1)),
         play_after: None,
@@ -125,11 +150,13 @@ pub async fn run(paths: Paths) -> Result<()> {
         quit: false,
     };
     if app.client.protection != crate::secret::Protection::Keychain {
-        app.say("no system keychain: credentials are stored unencrypted (readable only by your user)");
+        app.say(tr(
+            "no system keychain: credentials are stored unencrypted (readable only by your user)",
+            "sin llavero del sistema: las credenciales se guardan sin cifrar (legibles solo por tu usuario)",
+        ));
     }
-    let res = app.main_loop(&mut terminal, &mut rx).await;
+    let res = app.main_loop(terminal, &mut rx).await;
     app.stop_player().await;
-    ratatui::restore();
     res
 }
 
@@ -143,7 +170,7 @@ impl App {
         terminal: &mut ratatui::DefaultTerminal,
         rx: &mut mpsc::UnboundedReceiver<Msg>,
     ) -> Result<()> {
-        // Arranque rápido: primero la caché, luego la red.
+        // Fast start: the cached library first, the network afterwards.
         self.reload()?;
         self.refresh_library();
         let mut events = EventStream::new();
@@ -200,7 +227,7 @@ impl App {
         let (client, tx) = (self.client.clone(), self.tx.clone());
         let db_path = self.paths.db();
         tokio::spawn(async move {
-            // Primero vaciar la cola de posiciones pendientes.
+            // Send queued positions first.
             if let Ok(db) = Db::open(&db_path) {
                 let _ = sync::flush(&client, &db).await;
             }
@@ -208,8 +235,8 @@ impl App {
         });
     }
 
-    /// Carga la portada del libro relevante (el seleccionado, o el que suena
-    /// en la vista del reproductor), descargándola a la caché si hace falta.
+    /// Loads the cover of the relevant book (the selected one, or the one
+    /// playing in the player view), fetching it into the cache if needed.
     fn ensure_cover(&mut self) {
         let asin = match (&self.view, &self.player) {
             (View::Player, Some(p)) => p.session.asin.clone(),
@@ -245,13 +272,13 @@ impl App {
             Msg::Library(Ok(items)) => {
                 self.online = Some(true);
                 if let Err(e) = self.db.upsert_books(&items).and_then(|_| self.reload()) {
-                    self.say(format!("error guardando la biblioteca: {e}"));
+                    self.say(format!("{}: {e}", tr("could not save the library", "no se pudo guardar la biblioteca")));
                 }
             }
             Msg::Library(Err(e)) => {
-                tracing::warn!("biblioteca: {e:#}");
+                tracing::warn!("library: {e:#}");
                 self.online = Some(false);
-                self.say(format!("sin conexión con Audible: {e}"));
+                self.say(format!("{}: {e}", tr("cannot reach Audible", "sin conexión con Audible")));
             }
             Msg::Progress(asin, p) => {
                 self.downloads.insert(asin, Dl::Running(p));
@@ -263,15 +290,15 @@ impl App {
                         let _ = self.db.set_downloaded(&asin, &d.dir, &d.acr, &d.content_format);
                         let _ = self.reload();
                         let title = self.book(&asin).map(|b| b.title.clone()).unwrap_or_default();
-                        self.say(format!("descargado: {title} ({})", d.content_format));
+                        self.say(format!("{}: {title} ({})", tr("downloaded", "descargado"), d.content_format));
                         if self.play_after.as_deref() == Some(&asin) {
                             self.play_after = None;
                             self.play(asin);
                         }
                     }
                     Err(e) => {
-                        tracing::error!("descarga de {asin}: {e:#}");
-                        self.say(format!("error de descarga: {e:#}"));
+                        tracing::error!("download of {asin}: {e:#}");
+                        self.say(format!("{}: {e:#}", tr("download failed", "error de descarga")));
                     }
                 }
             }
@@ -285,7 +312,7 @@ impl App {
                     self.launch(&asin, ms).await;
                 }
                 Ok((Decision::Ask { local, remote }, _)) => self.ask = Some(Ask { asin, local, remote }),
-                Err(e) => self.say(format!("no se pudo empezar: {e:#}")),
+                Err(e) => self.say(format!("{}: {e:#}", tr("could not start", "no se pudo empezar"))),
             },
             Msg::Pushed(ok) => {
                 self.online = Some(ok);
@@ -307,7 +334,7 @@ impl App {
             self.stop_player().await;
             return;
         }
-        // Entre capítulos time-pos no está disponible un instante.
+        // Between chapters time-pos is briefly unavailable.
         let Ok(pos) = p.mpv.position(&p.session.files).await else { return };
         let paused = p.mpv.paused().await.unwrap_or(false);
         let act = p.session.update(pos, paused, Instant::now());
@@ -324,11 +351,11 @@ impl App {
             self.push_bg(asin, acr, pos);
         }
         if due {
-            self.say("temporizador: pausado");
+            self.say(tr("sleep timer: paused", "temporizador: en pausa"));
         }
     }
 
-    /// Envía la posición sin bloquear la UI (la red puede tardar hasta 15 s).
+    /// Sends the position without blocking the UI (the network may take up to 15 s).
     fn push_bg(&self, asin: String, acr: String, pos: i64) {
         let (client, tx, db_path) = (self.client.clone(), self.tx.clone(), self.paths.db());
         tokio::spawn(async move {
@@ -356,7 +383,7 @@ impl App {
         let (client, tx, slot) = (self.client.clone(), self.tx.clone(), self.download_slot.clone());
         let library = self.paths.library.clone();
         tokio::spawn(async move {
-            // Una descarga a la vez; el resto espera en cola.
+            // One download at a time; the rest wait in line.
             let _permit = slot.acquire().await;
             let asin = book.asin.clone();
             let res = download::book(&client, &ffmpeg, &library, &book, |p| {
@@ -367,7 +394,7 @@ impl App {
         });
     }
 
-    /// Reproduce: descarga primero si hace falta y decide la posición inicial.
+    /// Plays a book: downloads it first if needed, then picks the start position.
     fn play(&mut self, asin: String) {
         let Some(book) = self.book(&asin).cloned() else { return };
         if self.player.as_ref().is_some_and(|p| p.session.asin == asin) {
@@ -377,10 +404,14 @@ impl App {
         if book.path.is_none() {
             self.play_after = Some(asin.clone());
             self.download(&asin);
-            self.say(format!("descargando «{}»; empezará al terminar", book.title));
+            let msg = match i18n::get() {
+                Lang::En => format!("downloading «{}»; it will start when done", book.title),
+                Lang::Es => format!("descargando «{}»; empezará al terminar", book.title),
+            };
+            self.say(msg);
             return;
         }
-        self.say(format!("consultando la posición de «{}» en Audible…", book.title));
+        self.say(tr("asking Audible for the last position…", "consultando la última posición en Audible…"));
         let (client, tx, db_path) = (self.client.clone(), self.tx.clone(), self.paths.db());
         tokio::spawn(async move {
             let decision = match Db::open(&db_path) {
@@ -393,16 +424,16 @@ impl App {
 
     async fn launch(&mut self, asin: &str, start: i64) {
         if let Err(e) = self.try_launch(asin, start).await {
-            tracing::error!("reproducir {asin}: {e:#}");
-            self.say(format!("no se pudo reproducir: {e:#}"));
+            tracing::error!("play {asin}: {e:#}");
+            self.say(format!("{}: {e:#}", tr("could not play", "no se pudo reproducir")));
         }
     }
 
     async fn try_launch(&mut self, asin: &str, start: i64) -> Result<()> {
         self.stop_player().await;
-        let book = self.book(asin).cloned().context("libro desconocido")?;
-        let dir = book.path.clone().context("libro sin descargar")?;
-        let acr = book.acr.clone().context("libro sin acr")?;
+        let book = self.book(asin).cloned().context("unknown book")?;
+        let dir = book.path.clone().context("book not downloaded")?;
+        let acr = book.acr.clone().context("book without acr")?;
         let files = download::load_index(&dir).await?;
         let settings = self.db.settings(asin)?;
         let socket = crate::player::ipc_path(&self.paths.runtime);
@@ -425,22 +456,25 @@ impl App {
         Ok(())
     }
 
-    /// Cierra mpv y envía la posición final (esperando, para no perderla al salir).
+    /// Closes mpv and sends the final position (waiting for it, so it is not lost on exit).
     async fn stop_player(&mut self) {
         let Some(mut p) = self.player.take() else { return };
         let _ = p.mpv.quit().await;
-        let _ = std::fs::remove_file(&p.socket);
+        if cfg!(unix) {
+            let _ = std::fs::remove_file(&p.socket);
+        }
         let (last, finished) = p.session.finish();
         let _ = self.db.save_position(&p.session.asin, last, sync::now_ms());
         let _ = self.db.save_settings(&p.session.asin, p.settings);
         let ok = sync::push(&self.client, &self.db, &p.session.asin, &p.session.acr, last).await;
         self.online = Some(ok);
         self.say(format!(
-            "{} «{}» en {}{}",
-            if finished { "terminado" } else { "detenido" },
+            "{} «{}» {} {}{}",
+            if finished { tr("finished", "terminado") } else { tr("stopped", "detenido") },
             p.title,
+            tr("at", "en"),
             crate::hms(last),
-            if ok { "" } else { " (posición pendiente de enviar)" }
+            if ok { "" } else { tr(" (position will be sent later)", " (la posición se enviará después)") }
         ));
         self.view = View::Library;
         let _ = self.reload();
@@ -476,7 +510,10 @@ impl App {
                         Ok(()) => {
                             self.editing = None;
                             let dir = self.paths.display(&self.paths.library);
-                            self.say(format!("las descargas nuevas irán a {dir}"));
+                            self.say(format!(
+                                "{} {dir}",
+                                tr("new downloads will go to", "las descargas nuevas irán a")
+                            ));
                         }
                         Err(e) => {
                             self.editing = Some(input);
@@ -520,6 +557,10 @@ impl App {
                 self.settings_key(key);
                 Ok(())
             }
+            View::Language => {
+                self.language_key(key);
+                Ok(())
+            }
         };
         if let Err(e) = res {
             self.say(format!("mpv: {e}"));
@@ -553,7 +594,7 @@ impl App {
                 self.refilter();
             }
             KeyCode::Char('r') => {
-                self.say("actualizando biblioteca…");
+                self.say(tr("refreshing the library…", "actualizando la biblioteca…"));
                 self.refresh_library();
             }
             KeyCode::Char('d') => {
@@ -580,7 +621,33 @@ impl App {
         match key.code {
             KeyCode::Char('q') => self.quit = true,
             KeyCode::Esc | KeyCode::Tab | KeyCode::Char('c') => self.view = View::Library,
-            KeyCode::Enter => self.editing = Some(self.paths.display(&self.paths.library)),
+            KeyCode::Down | KeyCode::Char('j') => self.settings_sel = (self.settings_sel + 1).min(SETTINGS - 1),
+            KeyCode::Up | KeyCode::Char('k') => self.settings_sel = self.settings_sel.saturating_sub(1),
+            KeyCode::Enter if self.settings_sel == 0 => {
+                self.editing = Some(self.paths.display(&self.paths.library));
+            }
+            KeyCode::Enter => {
+                self.lang_sel = Lang::ALL.iter().position(|&l| l == i18n::get()).unwrap_or(0);
+                self.view = View::Language;
+            }
+            _ => {}
+        }
+    }
+
+    fn language_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Char('q') => self.quit = true,
+            KeyCode::Esc => self.view = View::Settings,
+            KeyCode::Down | KeyCode::Char('j') => self.lang_sel = (self.lang_sel + 1).min(Lang::ALL.len() - 1),
+            KeyCode::Up | KeyCode::Char('k') => self.lang_sel = self.lang_sel.saturating_sub(1),
+            KeyCode::Enter => {
+                let lang = Lang::ALL[self.lang_sel];
+                i18n::set(lang);
+                if let Err(e) = self.paths.set_language(lang) {
+                    self.say(format!("{e:#}"));
+                }
+                self.view = View::Settings;
+            }
             _ => {}
         }
     }
@@ -612,4 +679,3 @@ impl App {
         Ok(())
     }
 }
-

@@ -1,13 +1,13 @@
-//! Cuándo guardar y cuándo enviar la posición durante una reproducción.
-//! Es lógica pura: la CLI y la TUI ejecutan las acciones a su manera.
+//! When to save and when to send the position while a book plays.
+//! Pure logic: the CLI and the TUI carry out the actions their own way.
 
 use crate::download::ChapterFile;
 use std::time::{Duration, Instant};
 
-/// Cada cuánto se guarda en local y se envía a Audible.
+/// How often the position is saved locally and sent to Audible.
 const SAVE_EVERY: Duration = Duration::from_secs(5);
 const PUSH_EVERY: Duration = Duration::from_secs(120);
-/// A menos de esto del final, el libro cuenta como terminado.
+/// Closer than this to the end, the book counts as finished.
 const FINISH_MARGIN_MS: i64 = 30_000;
 
 pub struct Session {
@@ -24,7 +24,7 @@ pub struct Session {
 #[derive(Debug, Default, PartialEq)]
 pub struct Actions {
     pub save: bool,
-    /// Posición a enviar a Audible.
+    /// Position to send to Audible.
     pub push: Option<i64>,
 }
 
@@ -37,7 +37,7 @@ impl Session {
         self.files.last().map_or(0, |f| f.start_ms + f.length_ms)
     }
 
-    /// Registra el estado de mpv y decide qué hacer.
+    /// Records mpv's state and decides what to do.
     pub fn update(&mut self, pos: i64, paused: bool, now: Instant) -> Actions {
         let just_paused = paused && !self.paused;
         (self.pos, self.paused) = (pos, paused);
@@ -53,7 +53,7 @@ impl Session {
         act
     }
 
-    /// Posición final: el final del libro si quedaba menos del margen.
+    /// Final position: the end of the book if less than the margin was left.
     pub fn finish(&self) -> (i64, bool) {
         let end = self.end_ms();
         let finished = end > 0 && self.pos >= end - FINISH_MARGIN_MS;
@@ -88,7 +88,7 @@ mod tests {
         let mut s = session(t0);
         let t = t0 + Duration::from_secs(2);
         assert_eq!(s.update(3_000, true, t), Actions { save: true, push: Some(3_000) });
-        // Sigue en pausa: ni se repite el envío.
+        // Still paused: no second push.
         assert_eq!(s.update(3_000, true, t + Duration::from_secs(1)), Actions::default());
     }
 

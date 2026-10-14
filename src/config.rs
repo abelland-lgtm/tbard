@@ -5,6 +5,7 @@
 //! directories are created `0700` and private files `0600`, so other users on
 //! the same machine cannot read credentials, the database or the logs.
 
+use crate::i18n::{tr, Lang};
 use anyhow::{bail, Context, Result};
 use directories::{BaseDirs, ProjectDirs};
 use serde::{Deserialize, Serialize};
@@ -32,6 +33,8 @@ pub struct Paths {
     /// External programs; `None` when not found.
     pub mpv: Option<PathBuf>,
     pub ffmpeg: Option<PathBuf>,
+    /// Interface language; `None` until chosen on first run.
+    pub language: Option<Lang>,
 }
 
 /// `config.toml`. Written by the TUI settings screen, or by home-manager
@@ -44,6 +47,8 @@ struct File {
     /// Explicit paths to the external programs, if they are not on PATH.
     mpv_path: Option<String>,
     ffmpeg_path: Option<String>,
+    /// `en` or `es`.
+    language: Option<String>,
 }
 
 impl Paths {
@@ -64,6 +69,7 @@ impl Paths {
             data,
             mpv: None,
             ffmpeg: None,
+            language: None,
         };
         for dir in [&paths.config, &paths.data, &paths.cache, &log_dir, &paths.runtime] {
             secure_dir(dir)?;
@@ -79,6 +85,7 @@ impl Paths {
             library: file.library_dir.map(|d| expand_home(&d, &paths.home)).unwrap_or(paths.library.clone()),
             mpv: program("mpv", file.mpv_path),
             ffmpeg: program("ffmpeg", file.ffmpeg_path),
+            language: file.language.as_deref().and_then(Lang::parse),
             ..paths
         })
     }
@@ -106,6 +113,12 @@ impl Paths {
         Ok(())
     }
 
+    pub fn set_language(&mut self, lang: Lang) -> Result<()> {
+        update_file(&self.config_file(), |cfg| cfg.language = Some(lang.code().to_owned()))?;
+        self.language = Some(lang);
+        Ok(())
+    }
+
     /// A path for display, with `~` instead of the home directory.
     pub fn display(&self, p: &Path) -> String {
         match p.strip_prefix(&self.home) {
@@ -118,13 +131,19 @@ impl Paths {
 /// Error message for a missing external program, with how to install it here.
 pub fn missing(program: &str) -> String {
     let hint = if cfg!(target_os = "macos") {
-        "`brew install mpv ffmpeg`"
+        "`brew install mpv ffmpeg`".to_owned()
     } else if cfg!(windows) {
-        "`scoop bucket add extras; scoop install mpv ffmpeg`"
+        "`scoop bucket add extras; scoop install mpv ffmpeg`".to_owned()
     } else {
-        "your package manager, e.g. `sudo apt install mpv ffmpeg`, `sudo dnf install mpv ffmpeg` or `sudo pacman -S mpv ffmpeg`"
+        format!(
+            "{} `sudo apt install mpv ffmpeg`, `sudo dnf install mpv ffmpeg`, `sudo pacman -S mpv ffmpeg`",
+            tr("your package manager, e.g.", "tu gestor de paquetes, p. ej.")
+        )
     };
-    format!("{program} was not found on PATH. Install it with {hint}, or set {program}_path in config.toml")
+    match crate::i18n::get() {
+        Lang::En => format!("{program} was not found. Install it with {hint}, or set {program}_path in config.toml"),
+        Lang::Es => format!("no se encontró {program}. Instálalo con {hint}, o pon {program}_path en config.toml"),
+    }
 }
 
 /// Looks for an executable named `name` in the directories of `path_var`.
@@ -182,22 +201,35 @@ fn load(path: &Path) -> Result<File> {
     }
 }
 
-fn save_library_dir(file: &Path, home: &Path, input: &str) -> Result<PathBuf> {
-    let input = input.trim();
-    let dir = expand_home(input, home);
-    if !dir.is_absolute() {
-        bail!("use an absolute path or one starting with ~/");
-    }
+/// Applies `change` to config.toml, keeping the rest of the file.
+fn update_file(file: &Path, change: impl FnOnce(&mut File)) -> Result<()> {
     if file.is_symlink() {
-        bail!("config.toml is managed by home-manager: change programs.tbard.settings.library_dir instead");
+        bail!(
+            "{}",
+            tr(
+                "config.toml is managed by home-manager: change it in programs.tbard.settings",
+                "config.toml lo gestiona home-manager: cámbialo en programs.tbard.settings"
+            )
+        );
     }
-    std::fs::create_dir_all(&dir).with_context(|| format!("could not create {}", dir.display()))?;
     let mut cfg = load(file)?;
-    cfg.library_dir = Some(input.to_owned());
+    change(&mut cfg);
     std::fs::create_dir_all(file.parent().context("invalid config path")?)?;
     let tmp = file.with_extension("tmp");
     std::fs::write(&tmp, toml::to_string(&cfg)?)?;
     std::fs::rename(tmp, file)?;
+    Ok(())
+}
+
+fn save_library_dir(file: &Path, home: &Path, input: &str) -> Result<PathBuf> {
+    let input = input.trim();
+    let dir = expand_home(input, home);
+    if !dir.is_absolute() {
+        bail!("{}", tr("use an absolute path or one starting with ~/", "usa una ruta absoluta o que empiece por ~/"));
+    }
+    std::fs::create_dir_all(&dir)
+        .with_context(|| format!("{} {}", tr("could not create", "no se pudo crear"), dir.display()))?;
+    update_file(file, |cfg| cfg.library_dir = Some(input.to_owned()))?;
     Ok(dir)
 }
 
@@ -239,6 +271,10 @@ mod tests {
         assert!(dir.is_dir());
         assert_eq!(load(&file).unwrap().library_dir.as_deref(), Some("~/Libros"));
         assert!(save_library_dir(&file, &home, "relative").is_err());
+        // Saving another key keeps the existing ones.
+        update_file(&file, |cfg| cfg.language = Some("es".into())).unwrap();
+        let cfg = load(&file).unwrap();
+        assert_eq!((cfg.library_dir.as_deref(), cfg.language.as_deref()), (Some("~/Libros"), Some("es")));
 
         // Managed by home-manager (a symlink into the Nix store): left alone.
         #[cfg(unix)]

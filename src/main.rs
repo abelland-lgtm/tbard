@@ -2,6 +2,7 @@ mod audible;
 mod config;
 mod db;
 mod download;
+mod i18n;
 mod player;
 mod secret;
 mod session;
@@ -10,9 +11,10 @@ mod tui;
 
 use anyhow::{bail, Context, Result};
 use audible::{client::Client, library, login};
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 use config::Paths;
 use db::{Book, Db};
+use i18n::{tr, Lang};
 use std::{
     io::{BufRead, Write},
     path::PathBuf,
@@ -21,7 +23,7 @@ use std::{
 use sync::Decision;
 
 #[derive(Parser)]
-#[command(version, about = "Audible desde la terminal (sin argumentos abre la TUI)")]
+#[command(version, about = "Audible from the terminal (no arguments opens the TUI)")]
 struct Cli {
     #[command(subcommand)]
     cmd: Option<Cmd>,
@@ -29,25 +31,28 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
-    /// Registra tbard como dispositivo en tu cuenta de Audible.
+    /// Registers tbard as a device on your Audible account.
     Login {
-        /// País de la tienda: us, es, uk, de, fr, ca, it, au, in, jp, br.
+        /// Your Audible store: us, uk, de, fr, ca, it, au, in, jp, es, br.
         #[arg(long, default_value = "us")]
         locale: String,
-        /// Desarrollo: importa un auth file de `audible quickstart` sin cifrar.
+        /// Imports an unencrypted credentials file from `audible quickstart`.
         #[arg(long)]
         import: Option<PathBuf>,
     },
-    /// Actualiza y muestra la biblioteca.
+    /// Refreshes and lists your library.
     Library,
-    /// Descarga en máxima calidad, dividido por capítulos, sin reproducir.
-    Download { query: Vec<String> },
-    /// Descarga si hace falta y reproduce, sincronizando la posición con Audible.
-    Play {
-        /// Parte del título, autor o serie.
+    /// Downloads a book in the best quality, split by chapter, without playing it.
+    Download {
+        /// Part of the title, author or series.
         query: Vec<String>,
     },
-    /// Envía las posiciones pendientes.
+    /// Plays a book (downloading it first if needed), syncing the position with Audible.
+    Play {
+        /// Part of the title, author or series.
+        query: Vec<String>,
+    },
+    /// Sends positions that could not be sent while offline.
     Sync,
     /// Removes this device from your Amazon account and deletes the saved credentials.
     Logout,
@@ -55,10 +60,40 @@ enum Cmd {
     Doctor,
 }
 
+/// The CLI definition, with the help texts in the interface language.
+fn command() -> clap::Command {
+    let cmd = Cli::command();
+    if i18n::get() == Lang::En {
+        return cmd;
+    }
+    let query = |c: clap::Command| c.mut_arg("query", |a| a.help("Parte del título, autor o serie"));
+    cmd.about("Audible desde la terminal (sin argumentos abre la interfaz)")
+        .mut_subcommand("login", |c| {
+            c.about("Registra tbard como dispositivo en tu cuenta de Audible")
+                .mut_arg("locale", |a| a.help("Tu tienda de Audible: us, uk, de, fr, ca, it, au, in, jp, es, br"))
+                .mut_arg("import", |a| a.help("Importa un archivo de credenciales de `audible quickstart` sin cifrar"))
+        })
+        .mut_subcommand("library", |c| c.about("Actualiza y muestra tu biblioteca"))
+        .mut_subcommand("download", |c| {
+            query(c.about("Descarga un libro en la mejor calidad, dividido por capítulos, sin reproducirlo"))
+        })
+        .mut_subcommand("play", |c| {
+            query(c.about("Reproduce un libro (descargándolo si hace falta) y sincroniza la posición con Audible"))
+        })
+        .mut_subcommand("sync", |c| c.about("Envía las posiciones que no se pudieron enviar sin conexión"))
+        .mut_subcommand("logout", |c| {
+            c.about("Quita este dispositivo de tu cuenta de Amazon y borra las credenciales guardadas")
+        })
+        .mut_subcommand("doctor", |c| {
+            c.about("Revisa la instalación: programas externos, ubicación de archivos y sesión")
+        })
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
-    let cli = Cli::parse();
     let paths = Paths::new()?;
+    i18n::set(paths.language.unwrap_or_else(Lang::system));
+    let cli = Cli::from_arg_matches(&command().get_matches())?;
     init_log(&paths)?;
     match cli.cmd {
         None => tui::run(paths).await,
@@ -79,8 +114,7 @@ async fn main() -> Result<()> {
         Some(Cmd::Download { query }) => {
             let (client, db) = open(&paths)?;
             let book = find(&client, &db, &query.join(" ")).await?;
-            let dir = download(&client, &db, &paths, &book).await?.0;
-            println!("Listo: {}", dir.display());
+            download(&client, &db, &paths, &book).await?;
             Ok(())
         }
         Some(Cmd::Play { query }) => cmd_play(&paths, &query.join(" ")).await,
@@ -89,13 +123,13 @@ async fn main() -> Result<()> {
         Some(Cmd::Sync) => {
             let (client, db) = open(&paths)?;
             let left = sync::flush(&client, &db).await?;
-            println!("pendientes: {left}");
+            println!("{} {left}", tr("pending positions:", "posiciones pendientes:"));
             Ok(())
         }
     }
 }
 
-/// Log a archivo (nunca a la terminal: la TUI la ocupa). Nivel con `TBARD_LOG`.
+/// Logs go to a file, never to the terminal (the TUI owns it). Level via `TBARD_LOG`.
 fn init_log(paths: &Paths) -> Result<()> {
     config::secure_file(&paths.log)?;
     let file = std::fs::OpenOptions::new().append(true).open(&paths.log)?;
@@ -141,28 +175,47 @@ fn cmd_doctor(paths: &Paths) -> Result<()> {
             check(true, "ffmpeg", version(p, "-version").unwrap_or_else(|| p.display().to_string()));
             let help = std::process::Command::new(p).args(["-hide_banner", "-h", "demuxer=mov"]).output();
             let audible = help.is_ok_and(|o| String::from_utf8_lossy(&o.stdout).contains("audible_key"));
-            check(audible, "", if audible { "can decrypt Audible downloads".into() } else { "this ffmpeg build lacks -audible_key (too old?)".into() });
+            let detail = if audible {
+                tr("can decrypt Audible downloads", "puede descifrar las descargas de Audible")
+            } else {
+                tr("this ffmpeg lacks -audible_key (too old?)", "este ffmpeg no tiene -audible_key (¿muy antiguo?)")
+            };
+            check(audible, "", detail.into());
         }
         Err(e) => check(false, "ffmpeg", e.to_string()),
     }
+    let session = tr("session", "sesión");
     match secret::load(&paths.data, &secret::OsKeychain) {
         Ok((a, protection)) => {
-            check(true, "session", format!("{} (store: {})", a.customer_info.name, a.locale_code));
+            check(true, session, format!("{} ({} {})", a.customer_info.name, tr("store:", "tienda:"), a.locale_code));
             let ok = protection == secret::Protection::Keychain;
-            check(ok, "secrets", PROTECTION_NOTE[usize::from(!ok)].into());
+            check(ok, tr("secrets", "secretos"), protection_note(protection).into());
         }
-        Err(e) => check(false, "session", format!("{e:#}")),
+        Err(e) => check(false, session, format!("{e:#}")),
     }
     if problems > 0 {
-        bail!("{problems} problem(s) found");
+        bail!("{problems} {}", tr("problem(s) found", "problema(s) encontrado(s)"));
     }
     Ok(())
+}
+
+/// How the credentials are protected, in words.
+fn protection_note(p: secret::Protection) -> &'static str {
+    match p {
+        secret::Protection::Keychain => {
+            tr("encrypted; the key is in the system keychain", "cifradas; la clave está en el llavero del sistema")
+        }
+        secret::Protection::FileOnly => tr(
+            "no system keychain: stored unencrypted, readable only by your user",
+            "sin llavero del sistema: guardadas sin cifrar, legibles solo por tu usuario",
+        ),
+    }
 }
 
 fn open(paths: &Paths) -> Result<(Client, Db)> {
     let client = Client::open(&paths.data)?;
     if client.protection != secret::Protection::Keychain {
-        eprintln!("warning: {}", PROTECTION_NOTE[1]);
+        eprintln!("{}: {}", tr("warning", "aviso"), protection_note(client.protection));
     }
     Ok((client, Db::open(&paths.db())?))
 }
@@ -183,43 +236,62 @@ async fn cmd_login(paths: &Paths, locale: &str, import: Option<PathBuf>) -> Resu
         Some(path) => login::import(&path)?,
         None => {
             let pending = login::start(locale)?;
-            println!("Abre esta URL, inicia sesión y pega aquí la URL final (empieza por …/ap/maplanding):\n\n{}\n", pending.url);
+            println!(
+                "{}\n\n{}\n",
+                tr(
+                    "Open this URL, sign in, and paste here the address you land on (it starts with …/ap/maplanding):",
+                    "Abre esta URL, inicia sesión y pega aquí la dirección a la que llegas (empieza por …/ap/maplanding):"
+                ),
+                pending.url
+            );
             let _ = open::that(&pending.url);
-            let redirect = prompt("URL final: ")?;
+            let redirect = prompt(tr("Final URL: ", "URL final: "))?;
             login::finish(&reqwest::Client::new(), &pending, &redirect).await?
         }
     };
     let protection = secret::save(&paths.data, &auth, &secret::OsKeychain)?;
-    println!("Logged in. Credentials saved in {}", paths.display(&paths.data));
-    println!("{}", PROTECTION_NOTE[usize::from(protection != secret::Protection::Keychain)]);
+    println!(
+        "{} {} ({})",
+        tr("Logged in. Credentials saved in", "Sesión iniciada. Credenciales guardadas en"),
+        paths.display(&paths.data),
+        protection_note(protection)
+    );
     Ok(())
 }
-
-/// How the credentials are protected: [keychain, file only].
-const PROTECTION_NOTE: [&str; 2] = [
-    "encrypted; the key is in the system keychain",
-    "no system keychain available: stored unencrypted, readable only by your user",
-];
 
 async fn cmd_logout(paths: &Paths) -> Result<()> {
     let keys = secret::OsKeychain;
     match secret::load(&paths.data, &keys) {
         Ok((auth, _)) => match login::deregister(&reqwest::Client::new(), &auth).await {
-            Ok(()) => println!("This device was removed from your Amazon account."),
+            Ok(()) => println!(
+                "{}",
+                tr(
+                    "This device was removed from your Amazon account.",
+                    "Este dispositivo se quitó de tu cuenta de Amazon."
+                )
+            ),
             Err(e) => eprintln!(
-                "Could not remove this device from your Amazon account ({e:#}).\nRemove it under Amazon > Account > Content and Devices > Devices."
+                "{} ({e:#}).\n{}",
+                tr(
+                    "Could not remove this device from your Amazon account",
+                    "No se pudo quitar este dispositivo de tu cuenta de Amazon"
+                ),
+                tr(
+                    "Remove it under Amazon > Account > Content and Devices > Devices.",
+                    "Quítalo en Amazon > Cuenta > Contenido y dispositivos > Dispositivos."
+                )
             ),
         },
         Err(e) => eprintln!("{e:#}"),
     }
     secret::delete(&paths.data, &keys)?;
-    println!("Credentials deleted from this computer.");
+    println!("{}", tr("Credentials deleted from this computer.", "Credenciales borradas de este equipo."));
     Ok(())
 }
 
 async fn cmd_play(paths: &Paths, query: &str) -> Result<()> {
     let (client, db) = open(paths)?;
-    // Sin red no pasa nada: quedan en la cola.
+    // Offline is fine: whatever fails stays queued.
     let _ = sync::flush(&client, &db).await;
     let book = find(&client, &db, query).await?;
     let (dir, acr) = match (&book.path, &book.acr) {
@@ -230,21 +302,29 @@ async fn cmd_play(paths: &Paths, query: &str) -> Result<()> {
 
     let (decision, online) = sync::start(&client, &db, &book.asin).await?;
     if !online {
-        eprintln!("sin conexión con Audible; uso la posición local");
+        eprintln!(
+            "{}",
+            tr("cannot reach Audible; using the local position", "sin conexión con Audible; uso la posición local")
+        );
     }
     let start = match decision {
         Decision::Start(ms) => ms,
         Decision::Ask { local, remote } => {
-            let ans = prompt(&format!("Posición local {} / Audible {}. ¿Cuál uso? [l/A] ", hms(local), hms(remote)))?;
-            if ans.trim().eq_ignore_ascii_case("l") { local } else { remote }
+            let q = match i18n::get() {
+                Lang::En => format!("Local position {} / Audible {}. Which one? [l/A] ", hms(local), hms(remote)),
+                Lang::Es => format!("Posición local {} / Audible {}. ¿Cuál uso? [l/A] ", hms(local), hms(remote)),
+            };
+            if prompt(&q)?.trim().eq_ignore_ascii_case("l") {
+                local
+            } else {
+                remote
+            }
         }
     };
-    println!("▶ {} desde {}", book.title, hms(start));
+    println!("▶ {} {} {}", book.title, tr("from", "desde"), hms(start));
 
-    // mpv recibe Ctrl+C y se cierra; tbard lo ignora para poder enviar la posición final.
-    tokio::spawn(async {
-        while tokio::signal::ctrl_c().await.is_ok() {}
-    });
+    // Ctrl+C reaches mpv, which quits; tbard ignores it so it can still send the final position.
+    tokio::spawn(async { while tokio::signal::ctrl_c().await.is_ok() {} });
 
     let settings = db.settings(&book.asin)?;
     let opts = player::Options { terminal: true, speed: settings.speed, volume: settings.volume };
@@ -256,7 +336,7 @@ async fn cmd_play(paths: &Paths, query: &str) -> Result<()> {
         if mpv.exited() {
             break;
         }
-        // Entre capítulos time-pos no está disponible un instante.
+        // Between chapters time-pos is briefly unavailable.
         let Ok(pos) = mpv.position(&s.files).await else { continue };
         let paused = mpv.paused().await.unwrap_or(false);
         let act = s.update(pos, paused, Instant::now());
@@ -267,30 +347,39 @@ async fn cmd_play(paths: &Paths, query: &str) -> Result<()> {
             sync::push(&client, &db, &s.asin, &s.acr, p).await;
         }
     }
-    let _ = std::fs::remove_file(&socket);
+    if cfg!(unix) {
+        let _ = std::fs::remove_file(&socket);
+    }
 
     let (last, finished) = s.finish();
     db.save_position(&s.asin, last, sync::now_ms())?;
     let sent = sync::push(&client, &db, &s.asin, &s.acr, last).await;
     println!(
-        "■ {} en {}{}",
-        if finished { "Terminado" } else { "Pausado" },
+        "■ {} {} {}{}",
+        if finished { tr("Finished", "Terminado") } else { tr("Stopped", "Detenido") },
+        tr("at", "en"),
         hms(last),
-        if sent { ", sincronizado con Audible" } else { " (pendiente de enviar)" }
+        if sent {
+            tr(", synced with Audible", ", sincronizado con Audible")
+        } else {
+            tr(" (will be sent later)", " (se enviará después)")
+        }
     );
     Ok(())
 }
 
-/// Descarga con progreso en la terminal. Devuelve (carpeta, acr).
+/// Downloads with progress on the terminal. Returns (folder, acr).
 async fn download(client: &Client, db: &Db, paths: &Paths, book: &Book) -> Result<(PathBuf, String)> {
-    println!("Descargando «{}»…", book.title);
+    println!("{} «{}»…", tr("Downloading", "Descargando"), book.title);
     let mut last = None;
     let d = download::book(client, paths.ffmpeg()?, &paths.library, book, |p| {
         let line = match p {
             download::Progress::Audio { done, total } => {
                 format!("audio: {}% ({} / {} MB)", done * 100 / total.max(1), done >> 20, total >> 20)
             }
-            download::Progress::Splitting { done, total } => format!("capítulos: {done}/{total}"),
+            download::Progress::Splitting { done, total } => {
+                format!("{} {done}/{total}", tr("chapters:", "capítulos:"))
+            }
         };
         if last.as_ref() != Some(&line) {
             eprint!("\r  {line}\x1b[K");
@@ -300,21 +389,30 @@ async fn download(client: &Client, db: &Db, paths: &Paths, book: &Book) -> Resul
     .await?;
     eprintln!();
     db.set_downloaded(&book.asin, &d.dir, &d.acr, &d.content_format)?;
-    println!("{} en {}", d.content_format, d.dir.display());
+    println!("{} → {}", d.content_format, paths.display(&d.dir));
     Ok((d.dir, d.acr))
 }
 
 fn pick(mut books: Vec<Book>) -> Result<Book> {
     match books.len() {
-        0 => bail!("ningún libro coincide (prueba `tbard library` para actualizar)"),
+        0 => bail!(
+            "{}",
+            tr(
+                "no book matches (try `tbard library` to refresh)",
+                "ningún libro coincide (prueba `tbard library` para actualizar)"
+            )
+        ),
         1 => Ok(books.remove(0)),
         n => {
             for (i, b) in books.iter().enumerate() {
                 println!("{:>3}. {} — {}", i + 1, b.title, b.authors);
             }
-            let i: usize = prompt(&format!("¿Cuál? [1-{n}] "))?.trim().parse().context("número inválido")?;
+            let i: usize = prompt(&format!("{} [1-{n}] ", tr("Which one?", "¿Cuál?")))?
+                .trim()
+                .parse()
+                .context(tr("not a number", "no es un número"))?;
             if !(1..=n).contains(&i) {
-                bail!("fuera de rango");
+                bail!("{}", tr("out of range", "fuera de rango"));
             }
             Ok(books.swap_remove(i - 1))
         }

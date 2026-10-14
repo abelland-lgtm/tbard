@@ -1,4 +1,4 @@
-# Módulo de home-manager: `programs.tbard`.
+# home-manager module: `programs.tbard`.
 self:
 { config, lib, pkgs, ... }:
 let
@@ -7,19 +7,22 @@ let
 in
 {
   options.programs.tbard = {
-    enable = lib.mkEnableOption "tbard, Audible desde la terminal";
+    enable = lib.mkEnableOption "tbard, Audible from the terminal";
 
     package = lib.mkOption {
       type = lib.types.package;
       default = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
-      description = "Paquete de tbard.";
+      description = "The tbard package.";
     };
 
     settings = lib.mkOption {
       type = toml.type;
       default = { };
-      example = { library_dir = "~/Audiolibros"; };
-      description = "Contenido de ~/.config/tbard/config.toml.";
+      example = { library_dir = "~/Audiobooks"; language = "en"; };
+      description = ''
+        Contents of tbard's config.toml. When set, the file becomes read-only
+        and the TUI settings screen cannot change it.
+      '';
     };
   };
 

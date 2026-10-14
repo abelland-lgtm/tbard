@@ -12,12 +12,12 @@ use serde_json::Value;
 use std::time::{SystemTime, UNIX_EPOCH};
 use time::{macros::format_description, OffsetDateTime};
 
-/// Cliente de la API interna de Audible (`api.audible.<tld>`). Cada petición
-/// va firmada con la clave del dispositivo (firma ADP): Audible rechaza el
-/// Bearer con `client-id: 0` para dispositivos registrados como iPhone.
+/// Client for Audible's internal API (`api.audible.<tld>`). Every request is
+/// signed with the device key (ADP signature): Audible rejects a Bearer
+/// token with `client-id: 0` for devices registered as an iPhone.
 pub struct Client {
     pub http: reqwest::Client,
-    /// `https://api.audible.<tld>`; los tests lo apuntan a un servidor local.
+    /// `https://api.audible.<tld>`; tests point it at a local server.
     base: String,
     auth: Auth,
     key: SigningKey<rsa::sha2::Sha256>,
@@ -33,7 +33,7 @@ impl Client {
     }
 
     pub fn from_auth(auth: Auth) -> Result<Self> {
-        let key = RsaPrivateKey::from_pkcs1_pem(&auth.device_private_key).context("clave del dispositivo inválida")?;
+        let key = RsaPrivateKey::from_pkcs1_pem(&auth.device_private_key).context("invalid device key")?;
         let http = reqwest::Client::builder().user_agent("Audible/3.56.2 iOS/15.0.0").build()?;
         let base = format!("https://api.audible.{}", auth.tld());
         let protection = crate::secret::Protection::Keychain;
@@ -50,8 +50,8 @@ impl Client {
         self
     }
 
-    /// Reintenta los 5xx y 429 (dos veces, con espera creciente). Los errores de
-    /// red fallan enseguida: la cola de posiciones ya cubre el modo sin conexión.
+    /// Retries 5xx and 429 (twice, waiting longer each time). Network errors fail
+    /// right away: the position queue already covers offline use.
     pub async fn request(
         &self,
         method: Method,
@@ -72,7 +72,7 @@ impl Client {
             if !status.is_success() {
                 bail!("{method} {path}: {status}: {text}");
             }
-            // El PUT de posiciones responde 200 con cuerpo vacío.
+            // The positions PUT answers 200 with an empty body.
             return Ok(if text.trim().is_empty() { Value::Null } else { serde_json::from_str(&text)? });
         }
     }
@@ -88,7 +88,7 @@ impl Client {
             .http
             .request(method.clone(), format!("{}/{path}", self.base))
             .query(query)
-            // Sin red, que falle rápido y la posición vaya a la cola.
+            // Offline, fail fast so the position goes to the queue.
             .timeout(std::time::Duration::from_secs(15));
         if let Some(body) = body {
             req = req.json(body);
@@ -100,14 +100,10 @@ impl Client {
             None => url.path().to_owned(),
         };
         let body = req.body().and_then(|b| b.as_bytes()).unwrap_or_default();
-        let date = OffsetDateTime::now_utc().format(format_description!(
-            "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:6]Z"
-        ))?;
-        let data = format!(
-            "{method}\n{signed_path}\n{date}\n{}\n{}",
-            String::from_utf8_lossy(body),
-            self.auth.adp_token
-        );
+        let date = OffsetDateTime::now_utc()
+            .format(format_description!("[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:6]Z"))?;
+        let data =
+            format!("{method}\n{signed_path}\n{date}\n{}\n{}", String::from_utf8_lossy(body), self.auth.adp_token);
         let signature = STANDARD.encode(self.key.sign(data.as_bytes()).to_bytes());
         let h = req.headers_mut();
         h.insert("x-adp-token", self.auth.adp_token.parse()?);

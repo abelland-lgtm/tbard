@@ -1,30 +1,31 @@
 {
-  description = "tbard — Audible desde la terminal";
+  description = "tbard — Audible from the terminal";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
   outputs = { self, nixpkgs }:
     let
-      systems = [ "x86_64-linux" "aarch64-linux" ];
+      systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
       forAll = f: nixpkgs.lib.genAttrs systems (s: f nixpkgs.legacyPackages.${s});
       src = nixpkgs.lib.cleanSource ./.;
+      version = (builtins.fromTOML (builtins.readFile ./Cargo.toml)).package.version;
     in
     {
       packages = forAll (pkgs: {
         default = pkgs.rustPlatform.buildRustPackage {
           pname = "tbard";
-          version = "0.1.0";
-          inherit src;
+          inherit version src;
           cargoLock.lockFile = ./Cargo.lock;
           nativeBuildInputs = [ pkgs.makeWrapper ];
-          # reqwest carga los certificados del sistema al crear el cliente (tests).
+          # reqwest loads the system certificates when the client is built (tests).
           nativeCheckInputs = [ pkgs.cacert ];
-          # mpv y ffmpeg se invocan como procesos externos (no se enlazan).
+          # mpv and ffmpeg run as separate processes; put them on tbard's PATH.
           postInstall = ''
             wrapProgram $out/bin/tbard --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.mpv pkgs.ffmpeg ]}
           '';
           meta = {
-            description = "Audible desde la terminal";
+            description = "Audible from the terminal";
+            homepage = "https://github.com/abelland-lgtm/tbard";
             license = pkgs.lib.licenses.gpl3Plus;
             mainProgram = "tbard";
           };
@@ -32,13 +33,12 @@
       });
 
       checks = forAll (pkgs: {
-        # Compila y pasa los tests.
+        # Builds and runs the tests.
         package = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
-        # Solo dependencias con licencias permisivas (deny.toml).
+        # Only GPL-compatible dependency licenses (deny.toml).
         licenses = pkgs.rustPlatform.buildRustPackage {
           pname = "tbard-licenses";
-          version = "0.1.0";
-          inherit src;
+          inherit version src;
           cargoLock.lockFile = ./Cargo.lock;
           nativeBuildInputs = [ pkgs.cargo-deny ];
           buildPhase = "cargo deny --offline check licenses";
@@ -54,7 +54,7 @@
           packages = with pkgs; [
             rustc cargo clippy rustfmt rust-analyzer cargo-deny
             mpv ffmpeg sqlite pkg-config
-            audible-cli # solo para el spike (Fase 1), no es dependencia de tbard
+            audible-cli # only to explore the API; tbard does not depend on it
           ];
         };
       });

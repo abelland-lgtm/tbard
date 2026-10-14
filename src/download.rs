@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use tokio::{fs, io::AsyncWriteExt, process::Command};
 
-/// Un archivo de capítulo y su posición dentro del libro.
+/// A chapter file and where it sits in the book.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ChapterFile {
     pub file: String,
@@ -19,15 +19,15 @@ pub struct ChapterFile {
 
 pub const INDEX: &str = "chapters.json";
 
-/// Descarga `url` en `dest`. Si la conexión se corta, reintenta hasta 5 veces
-/// continuando desde lo ya bajado en `dest.part`.
+/// Downloads `url` into `dest`. If the connection drops it retries up to 5 times,
+/// resuming from what is already in `dest.part`.
 pub async fn fetch(client: &Client, url: &str, dest: &Path, mut progress: impl FnMut(u64, u64)) -> Result<()> {
     let mut attempt = 0;
     loop {
         match fetch_once(client, url, dest, &mut progress).await {
             Err(e) if attempt < 5 => {
                 attempt += 1;
-                tracing::warn!("descarga de {} interrumpida ({e:#}), reintento {attempt}", dest.display());
+                tracing::warn!("download of {} interrupted ({e:#}), retry {attempt}", dest.display());
                 tokio::time::sleep(std::time::Duration::from_secs(2 * attempt)).await;
             }
             res => return res,
@@ -50,17 +50,12 @@ async fn fetch_once(client: &Client, url: &str, dest: &Path, progress: &mut impl
         .and_then(reqwest::Response::error_for_status)
         // The URL is a signed CDN link: keep it out of errors and logs.
         .map_err(reqwest::Error::without_url)?;
-    // 206 = el servidor respeta el Range; 200 = empieza de cero.
+    // 206 = the server honours the Range; 200 = start from scratch.
     let resumed = res.status() == reqwest::StatusCode::PARTIAL_CONTENT;
     let mut done = if resumed { have } else { 0 };
     let total = done + res.content_length().unwrap_or(0);
-    let mut out = fs::OpenOptions::new()
-        .create(true)
-        .write(true)
-        .append(resumed)
-        .truncate(!resumed)
-        .open(&part)
-        .await?;
+    let mut out =
+        fs::OpenOptions::new().create(true).write(true).append(resumed).truncate(!resumed).open(&part).await?;
     let mut body = res.bytes_stream();
     while let Some(chunk) = body.next().await {
         let chunk = chunk.map_err(reqwest::Error::without_url)?;
@@ -84,8 +79,8 @@ pub struct Downloaded {
     pub content_format: String,
 }
 
-/// Descarga un libro en máxima calidad y lo divide por capítulos en
-/// `<biblioteca>/<autor>/<título>`.
+/// Downloads a book in the best quality and splits it by chapter into
+/// `<library>/<author>/<title>`.
 pub async fn book(
     client: &Client,
     ffmpeg: &Path,
@@ -111,7 +106,7 @@ pub async fn book(
         progress(Progress::Splitting { done, total })
     })
     .await?;
-    // Solo se borra el AAXC cuando todos los capítulos están listos.
+    // The AAXC is deleted only once every chapter is done.
     fs::remove_file(&aaxc).await?;
     Ok(Downloaded { dir, acr: lic.acr, content_format: lic.content_format })
 }
@@ -124,8 +119,8 @@ pub struct Tags<'a> {
     pub cover: Option<&'a Path>,
 }
 
-/// Corta `input` en un archivo `.m4b` por capítulo, sin recodificar, y escribe
-/// `chapters.json` con los offsets. `key_iv` descifra AAXC al vuelo.
+/// Cuts `input` into one `.m4b` per chapter without re-encoding, and writes
+/// `chapters.json` with the offsets. `key_iv` decrypts AAXC on the fly.
 pub async fn split(
     ffmpeg: &Path,
     input: &Path,
@@ -158,9 +153,9 @@ pub async fn split(
             .args(["-metadata", &format!("album_artist={}", tags.artist)])
             .args(["-metadata", "genre=Audiobook", "-f", "mp4"])
             .arg(out_dir.join(&file));
-        let out = cmd.output().await.context("no se pudo ejecutar ffmpeg")?;
+        let out = cmd.output().await.context("could not run ffmpeg")?;
         if !out.status.success() {
-            bail!("ffmpeg falló en «{}»: {}", ch.title, String::from_utf8_lossy(&out.stderr));
+            bail!("ffmpeg failed on «{}»: {}", ch.title, String::from_utf8_lossy(&out.stderr));
         }
         files.push(ChapterFile { file, title: ch.title.clone(), start_ms: ch.start_ms, length_ms: ch.length_ms });
         on_chapter(i + 1, total);
@@ -170,11 +165,11 @@ pub async fn split(
 }
 
 pub async fn load_index(dir: &Path) -> Result<Vec<ChapterFile>> {
-    let raw = fs::read(dir.join(INDEX)).await.with_context(|| format!("falta {INDEX} en {}", dir.display()))?;
+    let raw = fs::read(dir.join(INDEX)).await.with_context(|| format!("{INDEX} is missing in {}", dir.display()))?;
     Ok(serde_json::from_slice(&raw)?)
 }
 
-/// Carpeta del libro: `<biblioteca>/<autor>/<título>`.
+/// A book's folder: `<library>/<author>/<title>`.
 pub fn book_dir(library: &Path, authors: &str, title: &str) -> PathBuf {
     let author = authors.split(',').next().unwrap_or("Desconocido");
     library.join(sanitize(author)).join(sanitize(title))
@@ -183,7 +178,11 @@ pub fn book_dir(library: &Path, authors: &str, title: &str) -> PathBuf {
 fn sanitize(s: &str) -> String {
     let s: String = s.chars().map(|c| if c == '/' || c.is_control() { '_' } else { c }).collect();
     let s = s.trim().trim_start_matches('.');
-    if s.is_empty() { "_".into() } else { s.into() }
+    if s.is_empty() {
+        "_".into()
+    } else {
+        s.into()
+    }
 }
 
 fn secs(ms: i64) -> String {
@@ -205,11 +204,11 @@ mod tests {
         );
     }
 
-    /// Necesita ffmpeg en el PATH (devShell); en el sandbox de Nix se salta.
+    /// Needs ffmpeg on PATH (devShell); skipped in the Nix sandbox.
     #[tokio::test]
     async fn split_synthetic_book() {
         if std::process::Command::new("ffmpeg").arg("-version").output().is_err() {
-            eprintln!("ffmpeg no disponible, se salta");
+            eprintln!("ffmpeg not available, skipping");
             return;
         }
         let dir = std::env::temp_dir().join(format!("tbard-split-{}", std::process::id()));
@@ -229,10 +228,17 @@ mod tests {
             Chapter { title: "Tres".into(), start_ms: 5_000, length_ms: 4_000 },
         ];
         let out = dir.join("out");
-        let files =
-            split(Path::new("ffmpeg"), &src, None, &chapters, &Tags { album: "Libro", artist: "Autora", cover: None }, &out, |_, _| {})
-                .await
-                .unwrap();
+        let files = split(
+            Path::new("ffmpeg"),
+            &src,
+            None,
+            &chapters,
+            &Tags { album: "Libro", artist: "Autora", cover: None },
+            &out,
+            |_, _| {},
+        )
+        .await
+        .unwrap();
         assert_eq!(load_index(&out).await.unwrap(), files);
 
         for (f, ch) in files.iter().zip(&chapters) {
