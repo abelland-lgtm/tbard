@@ -158,8 +158,9 @@ fn player(f: &mut Frame, app: &mut App, area: Rect) {
     let inner = top_block.inner(top);
     f.render_widget(top_block, top);
     // Las celdas miden ~1:2, así que la portada cuadrada ocupa el doble de ancho que de alto.
-    let [cover_area, info] =
-        Layout::horizontal([Constraint::Length(inner.height * 2 + 1), Constraint::Min(0)]).areas(inner);
+    let [cover_area, info] = Layout::horizontal([Constraint::Length(inner.height * 2 + 1), Constraint::Min(0)])
+        .spacing(3)
+        .areas(inner);
 
     let state = if p.session.paused { "⏸ en pausa" } else { "▶ reproduciendo" };
     let timer = match p.timer {
