@@ -535,6 +535,11 @@ impl App {
                 self.query.clear();
                 self.refilter();
             }
+            KeyCode::Char(c @ '1'..='5') => {
+                self.filter = Filter::ALL[c as usize - '1' as usize];
+                self.list.select(Some(0));
+                self.refilter();
+            }
             KeyCode::Char('f') => {
                 self.filter = self.filter.next();
                 self.list.select(Some(0));

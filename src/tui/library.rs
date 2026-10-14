@@ -11,6 +11,9 @@ pub enum Filter {
 }
 
 impl Filter {
+    /// Secciones del menú lateral, en orden (teclas 1–5).
+    pub const ALL: [Self; 5] = [Self::All, Self::InProgress, Self::Downloaded, Self::NotDownloaded, Self::Finished];
+
     pub fn next(self) -> Self {
         match self {
             Self::All => Self::InProgress,
@@ -23,12 +26,16 @@ impl Filter {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::All => "todos",
-            Self::InProgress => "en curso",
-            Self::Downloaded => "descargados",
-            Self::NotDownloaded => "sin descargar",
-            Self::Finished => "terminados",
+            Self::All => "Biblioteca",
+            Self::InProgress => "En curso",
+            Self::Downloaded => "Descargados",
+            Self::NotDownloaded => "Sin descargar",
+            Self::Finished => "Terminados",
         }
+    }
+
+    pub fn count(self, books: &[Book]) -> usize {
+        books.iter().filter(|b| self.matches(b)).count()
     }
 
     fn matches(self, b: &Book) -> bool {

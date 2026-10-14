@@ -24,6 +24,7 @@ tbard sync                       # enviar posiciones pendientes
 | `d` | descargar | `[` / `]` | capítulo |
 | `⏎` | reproducir | `+` / `-` | velocidad |
 | `r` | actualizar | `9` / `0` | volumen |
+| `1`–`5` | sección del menú | | |
 | `tab` | ir al reproductor | `t` | temporizador |
 | `c` | configuración | `s` / `tab` | parar / biblioteca |
 | `q` | salir | `q` | salir |

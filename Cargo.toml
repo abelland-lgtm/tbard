@@ -30,4 +30,5 @@ tokio = { version = "1.53.3", features = ["rt-multi-thread", "macros", "net", "p
 toml = "1.1.8"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "std", "env-filter"] }
+tui-big-text = "0.8.10"
 url = "2.5.8"
