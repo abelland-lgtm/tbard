@@ -2,7 +2,22 @@
 name = "tbard"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.90"
+authors = ["Abelland"]
 license = "GPL-3.0-or-later"
+description = "Audible from the terminal: library, chapter-split downloads, playback with mpv and position sync"
+repository = "https://github.com/abelland-lgtm/tbard"
+homepage = "https://github.com/abelland-lgtm/tbard"
+readme = "README.md"
+keywords = ["audible", "audiobooks", "tui", "terminal", "mpv"]
+categories = ["command-line-utilities", "multimedia::audio"]
+exclude = ["/examples", "/nix", "/noctalia", "/packaging", "/.github", "/flake.*", "/.envrc"]
+
+[package.metadata.wix]
+upgrade-guid = "DCD5D99C-36BA-4E6A-BF2A-F53B063DD08F"
+path-guid = "FA109C7E-C1D1-4B48-85A5-B377D9209DC4"
+license = false
+eula = false
 
 [dependencies]
 aes = "0.9.3"
@@ -36,3 +51,12 @@ tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "std", "env-filter"] }
 tui-big-text = "0.8.10"
 url = "2.5.8"
+
+[profile.release]
+lto = "thin"
+strip = true
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"

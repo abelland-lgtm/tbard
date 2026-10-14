@@ -1,0 +1,23 @@
+{
+    "version": "@VERSION@",
+    "description": "Audible from the terminal: library, chapter-split downloads, playback with mpv and position sync",
+    "homepage": "https://github.com/abelland-lgtm/tbard",
+    "license": "GPL-3.0-or-later",
+    "depends": ["extras/mpv", "main/ffmpeg"],
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/abelland-lgtm/tbard/releases/download/v@VERSION@/tbard-x86_64-pc-windows-msvc.zip",
+            "hash": "@SHA256@",
+            "extract_dir": "@EXTRACT_DIR@"
+        }
+    },
+    "bin": "tbard.exe",
+    "checkver": "github",
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/abelland-lgtm/tbard/releases/download/v$version/tbard-x86_64-pc-windows-msvc.zip"
+            }
+        }
+    }
+}

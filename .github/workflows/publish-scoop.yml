@@ -1,0 +1,47 @@
+# Updates bucket/tbard.json in the Scoop bucket repository from the Windows
+# release archive. Needs the SCOOP_BUCKET_TOKEN secret (a token that can push
+# to abelland-lgtm/scoop-bucket); skipped without it.
+name: publish-scoop
+on:
+  workflow_call:
+    inputs:
+      plan:
+        required: true
+        type: string
+jobs:
+  scoop:
+    runs-on: ubuntu-latest
+    env:
+      SCOOP_BUCKET_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}
+      TAG: ${{ fromJson(inputs.plan).announcement_tag }}
+    steps:
+      - if: env.SCOOP_BUCKET_TOKEN == ''
+        run: echo "::warning::SCOOP_BUCKET_TOKEN is not set; skipping Scoop"
+      - if: env.SCOOP_BUCKET_TOKEN != ''
+        uses: actions/checkout@v4
+      - if: env.SCOOP_BUCKET_TOKEN != ''
+        uses: actions/checkout@v4
+        with:
+          repository: abelland-lgtm/scoop-bucket
+          token: ${{ secrets.SCOOP_BUCKET_TOKEN }}
+          path: bucket-repo
+      - name: Render and push the manifest
+        if: env.SCOOP_BUCKET_TOKEN != ''
+        run: |
+          version="${TAG#v}"
+          archive="tbard-x86_64-pc-windows-msvc.zip"
+          curl -fsSL -o "$archive" "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${archive}"
+          sha256=$(sha256sum "$archive" | cut -d' ' -f1)
+          # The archive may or may not wrap its files in a folder.
+          extract_dir=$(unzip -Z1 "$archive" | grep -m1 '/tbard.exe$' | sed 's|/tbard.exe$||' || true)
+          mkdir -p bucket-repo/bucket
+          sed -e "s/@VERSION@/${version}/" -e "s/@SHA256@/${sha256}/" -e "s|@EXTRACT_DIR@|${extract_dir}|" \
+            packaging/scoop/tbard.json \
+            | jq 'if .architecture."64bit".extract_dir == "" then del(.architecture."64bit".extract_dir) else . end' \
+            > bucket-repo/bucket/tbard.json
+          cat bucket-repo/bucket/tbard.json
+          cd bucket-repo
+          git config user.name "tbard release bot"
+          git config user.email "noreply@github.com"
+          git add bucket/tbard.json
+          git commit -m "tbard ${version}" && git push || echo "manifest unchanged"

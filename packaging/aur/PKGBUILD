@@ -1,0 +1,20 @@
+# Template rendered by .github/workflows/publish-aur.yml on each release.
+pkgname=tbard-bin
+pkgver=@VERSION@
+pkgrel=1
+pkgdesc="Audible from the terminal: library, chapter-split downloads, playback with mpv and position sync"
+arch=('x86_64')
+url="https://github.com/abelland-lgtm/tbard"
+license=('GPL-3.0-or-later')
+depends=('mpv' 'ffmpeg' 'gcc-libs' 'glibc')
+optdepends=('gnome-keyring: keeps the credentials key (any Secret Service, such as KWallet, works)')
+provides=('tbard')
+conflicts=('tbard')
+source=("${url}/releases/download/v${pkgver}/tbard-x86_64-unknown-linux-gnu.tar.xz")
+sha256sums=('@SHA256@')
+
+package() {
+  cd "tbard-x86_64-unknown-linux-gnu"
+  install -Dm755 tbard "${pkgdir}/usr/bin/tbard"
+  install -Dm644 README.md "${pkgdir}/usr/share/doc/tbard/README.md"
+}

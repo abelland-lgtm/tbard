@@ -1,0 +1,38 @@
+# Updates the tbard-bin package on the AUR from the Linux release archive.
+# Needs the AUR_SSH_PRIVATE_KEY secret (key of the AUR account that owns the
+# package); skipped without it.
+name: publish-aur
+on:
+  workflow_call:
+    inputs:
+      plan:
+        required: true
+        type: string
+jobs:
+  aur:
+    runs-on: ubuntu-latest
+    env:
+      AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+      TAG: ${{ fromJson(inputs.plan).announcement_tag }}
+    steps:
+      - if: env.AUR_SSH_PRIVATE_KEY == ''
+        run: echo "::warning::AUR_SSH_PRIVATE_KEY is not set; skipping the AUR"
+      - if: env.AUR_SSH_PRIVATE_KEY != ''
+        uses: actions/checkout@v4
+      - name: Render PKGBUILD
+        if: env.AUR_SSH_PRIVATE_KEY != ''
+        run: |
+          version="${TAG#v}"
+          url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/tbard-x86_64-unknown-linux-gnu.tar.xz"
+          sha256=$(curl -fsSL "$url" | sha256sum | cut -d' ' -f1)
+          sed -e "s/@VERSION@/${version}/" -e "s/@SHA256@/${sha256}/" packaging/aur/PKGBUILD > PKGBUILD
+          cat PKGBUILD
+      - if: env.AUR_SSH_PRIVATE_KEY != ''
+        uses: KSXGitHub/github-actions-deploy-aur@v4.2.0
+        with:
+          pkgname: tbard-bin
+          pkgbuild: ./PKGBUILD
+          commit_username: tbard release bot
+          commit_email: noreply@github.com
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: Update to ${{ env.TAG }}
