@@ -185,7 +185,7 @@ fn sidebar(f: &mut Frame, app: &App, area: Rect) {
 
     let mut lines = vec![
         Line::styled("░T░B░A░R░D░", Style::new().fg(t.primary).bold()),
-        Line::styled("audible · tty", Style::new().fg(t.on_surface_variant)),
+        Line::styled(tr("audiobooks · tty", "audiolibros · tty"), Style::new().fg(t.on_surface_variant)),
         Line::from(""),
     ];
     for (i, filter) in Filter::ALL.into_iter().enumerate() {
@@ -511,7 +511,7 @@ fn settings(f: &mut Frame, app: &App, area: Rect) {
     let title = tr("Settings", "Configuracion");
     let body = header(f, t, area, title, vec![stat(t, tr("options", "opciones"), super::SETTINGS.to_string())]);
     let [form, _, help] =
-        Layout::vertical([Constraint::Length(6), Constraint::Min(0), Constraint::Length(5)]).areas(body);
+        Layout::vertical([Constraint::Length(6), Constraint::Min(0), Constraint::Length(6)]).areas(body);
     let form = form.inner(Margin::new(0, 1));
     let w = form.width as usize;
 
@@ -541,7 +541,16 @@ fn settings(f: &mut Frame, app: &App, area: Rect) {
     ];
     f.render_widget(Paragraph::new(lines), form);
 
-    let mut help_lines = vec![separator(t, help.width)];
+    let inspired = Line::styled(
+        format!(
+            "tbard v{} · {} Libation (github.com/rmcrackan/Libation) {}",
+            env!("CARGO_PKG_VERSION"),
+            tr("inspired by", "inspirado en"),
+            tr("and similar projects", "y proyectos similares")
+        ),
+        Style::new().fg(t.on_surface_variant),
+    );
+    let mut help_lines = vec![inspired, separator(t, help.width)];
     help_lines.extend(if app.editing.is_some() {
         actions(t, &[(tr("save the folder", "guardar la carpeta"), "↵"), (tr("cancel", "cancelar"), "ESC")])
     } else {

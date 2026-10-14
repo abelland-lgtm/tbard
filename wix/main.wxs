@@ -69,7 +69,7 @@
 
         <Package Id='*'
             Keywords='Installer'
-            Description='Audible from the terminal: library, chapter-split downloads, playback with mpv and position sync'
+            Description='Audiobook manager and listener for the terminal: your Audible library, chapter-split downloads, playback with mpv and position sync'
             Manufacturer='Abelland'
             InstallerVersion='450'
             Languages='1033'

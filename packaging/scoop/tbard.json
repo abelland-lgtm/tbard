@@ -1,6 +1,6 @@
 {
     "version": "@VERSION@",
-    "description": "Audible from the terminal: library, chapter-split downloads, playback with mpv and position sync",
+    "description": "Audiobook manager and listener for the terminal: your Audible library, chapter-split downloads, playback with mpv and position sync",
     "homepage": "https://github.com/abelland-lgtm/tbard",
     "license": "GPL-3.0-or-later",
     "depends": ["extras/mpv", "main/ffmpeg"],

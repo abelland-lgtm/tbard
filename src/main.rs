@@ -23,7 +23,11 @@ use std::{
 use sync::Decision;
 
 #[derive(Parser)]
-#[command(version, about = "Audible from the terminal (no arguments opens the TUI)")]
+#[command(
+    version,
+    about = "Audiobook manager and listener for the terminal (no arguments opens the TUI)",
+    after_help = "Inspired by Libation (https://github.com/rmcrackan/Libation) and similar projects."
+)]
 struct Cli {
     #[command(subcommand)]
     cmd: Option<Cmd>,
@@ -67,7 +71,8 @@ fn command() -> clap::Command {
         return cmd;
     }
     let query = |c: clap::Command| c.mut_arg("query", |a| a.help("Parte del título, autor o serie"));
-    cmd.about("Audible desde la terminal (sin argumentos abre la interfaz)")
+    cmd.about("Gestor y reproductor de audiolibros para la terminal (sin argumentos abre la interfaz)")
+        .after_help("Inspirado en Libation (https://github.com/rmcrackan/Libation) y proyectos similares.")
         .mut_subcommand("login", |c| {
             c.about("Registra tbard como dispositivo en tu cuenta de Audible")
                 .mut_arg("locale", |a| a.help("Tu tienda de Audible: us, uk, de, fr, ca, it, au, in, jp, es, br"))

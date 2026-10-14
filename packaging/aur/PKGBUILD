@@ -2,7 +2,7 @@
 pkgname=tbard-bin
 pkgver=@VERSION@
 pkgrel=1
-pkgdesc="Audible from the terminal: library, chapter-split downloads, playback with mpv and position sync"
+pkgdesc="Audiobook manager and listener for the terminal: your Audible library, chapter-split downloads, playback with mpv and position sync"
 arch=('x86_64')
 url="https://github.com/abelland-lgtm/tbard"
 license=('GPL-3.0-or-later')

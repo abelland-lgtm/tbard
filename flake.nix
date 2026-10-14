@@ -1,5 +1,5 @@
 {
-  description = "tbard — Audible from the terminal";
+  description = "tbard — audiobook manager and listener for the terminal";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -24,7 +24,7 @@
             wrapProgram $out/bin/tbard --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.mpv pkgs.ffmpeg ]}
           '';
           meta = {
-            description = "Audible from the terminal";
+            description = "Audiobook manager and listener for the terminal";
             homepage = "https://github.com/abelland-lgtm/tbard";
             license = pkgs.lib.licenses.gpl3Plus;
             mainProgram = "tbard";

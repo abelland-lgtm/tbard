@@ -5,6 +5,11 @@ marketplace, `api.audible.com`). This is the reference tbard is implemented
 from: the protocol as seen on the wire, not third-party code. No tokens,
 vouchers or account data are included.
 
+tbard is inspired by [Libation](https://github.com/rmcrackan/Libation),
+[audible](https://github.com/mkb79/Audible)/[audible-cli](https://github.com/mkb79/audible-cli)
+and similar projects, which first showed that a personal library could be
+downloaded and synced outside Audible's own apps.
+
 Test books: *Juramentada* (`B09GX6H7J8`, 151 chapters, 57 h 39 min) and
 *Robot salvaje* (`B0DKXZLL89`, 86 chapters, 4 h 25 min).
 

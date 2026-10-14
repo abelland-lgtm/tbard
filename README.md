@@ -1,18 +1,27 @@
 # tbard
 
-**Audible from the terminal.** Browse your Audible library, download books in
-the best available quality split into one file per chapter, listen to them
-with mpv, and keep your position in sync with the Audible app on your phone.
+**Audiobook manager and listener for the terminal.**
+
+tbard keeps your audiobook library in one place and plays it from the
+terminal. It connects to your Audible account to list the books you own,
+downloads them in the best available quality split into one file per chapter,
+plays them with mpv, and keeps your listening position in sync with the
+Audible app on your phone.
 
 - Library with fuzzy search, sections and cover art (Kitty/Ghostty graphics
   or half blocks).
-- Downloads in the best quality Audible offers, losslessly split by chapter
+- Downloads in the best quality available, losslessly split by chapter
   (`.m4b` with title, track number and cover).
 - Player with chapters, ±30 s, speed 0.5–3×, volume and a sleep timer.
 - Two-way position sync (Whispersync). Offline playback with a queue that
   sends positions when the connection comes back.
 - English and Spanish interface.
 - Linux, macOS and Windows.
+
+tbard is inspired by [Libation](https://github.com/rmcrackan/Libation) and
+similar projects: it brings Libation's idea of a personal, DRM-free audiobook
+library to the terminal, together with a player and position sync. See
+[Inspiration and thanks](#inspiration-and-thanks).
 
 > **Disclaimer.** tbard is an unofficial tool, not affiliated with Audible or
 > Amazon. It talks to Audible's private API, which may change at any time.
@@ -196,6 +205,25 @@ nix flake check
 
 [`docs/audible-api.md`](docs/audible-api.md) documents the Audible API as
 tbard uses it.
+
+## Inspiration and thanks
+
+tbard exists because of projects that showed what an open audiobook library
+can be:
+
+- [**Libation**](https://github.com/rmcrackan/Libation): the main inspiration.
+  A desktop app that backs up your Audible library as DRM-free files; tbard
+  follows the same idea in the terminal.
+- [audible](https://github.com/mkb79/Audible) and
+  [audible-cli](https://github.com/mkb79/audible-cli): Python tools whose work
+  documenting Audible's API made projects like this possible.
+- [Toutui](https://github.com/AlbanDAVID/Toutui): a terminal audiobook player
+  that inspired tbard's player.
+- [mpv](https://mpv.io) and [ffmpeg](https://ffmpeg.org), which do the
+  playback and the audio work.
+
+tbard is an independent implementation: it does not contain code from these
+projects.
 
 ## License
 

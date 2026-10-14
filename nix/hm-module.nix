@@ -7,7 +7,7 @@ let
 in
 {
   options.programs.tbard = {
-    enable = lib.mkEnableOption "tbard, Audible from the terminal";
+    enable = lib.mkEnableOption "tbard, an audiobook manager and listener for the terminal";
 
     package = lib.mkOption {
       type = lib.types.package;
