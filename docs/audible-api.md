@@ -86,12 +86,40 @@ para mostrar la calidad máxima disponible.
 - El `chapter_info` de la licencia coincide con el de metadata (151
   capítulos).
 
+## Autenticación de las peticiones ✅ confirmado
+
+Con un dispositivo registrado como iPhone (`A2CZJZGLK2JJVM`), `Authorization:
+Bearer` + `client-id: 0` falla con `400 "The specified authorization token does
+not correspond to the specified Client-ID"`. Lo que funciona es la **firma ADP**
+en cada petición:
+
+- `x-adp-token: <adp_token>`
+- `x-adp-alg: SHA256withRSA:1.0`
+- `x-adp-signature: <base64(firma)>:<fecha>`
+  - fecha: UTC `YYYY-MM-DDTHH:MM:SS.ffffffZ`
+  - firma: RSA PKCS#1 v1.5 + SHA-256 con `device_private_key` (PEM PKCS#1)
+    sobre `MÉTODO\nRUTA?QUERY\nFECHA\nCUERPO\nADP_TOKEN`
+
+No hace falta refrescar el `access_token` para la API de Audible.
+
+## Descarga real ✅ confirmado (*Robot salvaje*, `B0DKXZLL89`)
+
+- `High` concedió `AAX_44_128` (AAC 44,1 kHz a 126 kbps reales, estéreo):
+  244 MB por 4 h 25 min.
+- El voucher se descifra con SHA-256(`device_type + serial + user_id + asin`)
+  → clave = bytes 0..16 e IV = 16..32, AES-128-CBC. El JSON resultante trae
+  `key` e `iv` en hex para `ffmpeg -audible_key/-audible_iv`.
+- Cortar el AAXC por capítulo con `-ss/-t` delante de `-i` y `-c copy`
+  funciona sin archivo intermedio: 86 capítulos en unos 5 s. La desviación
+  máxima por capítulo es de 30 ms y la suma total difiere en 0,9 s.
+- La fecha `last_updated` puede venir con menos de 3 decimales
+  (`02:59:17.94`).
+- Los capítulos de este libro sí traen títulos reales ("Capítulo 31: La
+  Primera Noche"); Juramentada solo los trae genéricos.
+
 ## Pendiente de verificar
 
-- El descifrado del voucher (`license_response`) y la descarga real de
-  `offline_url` (Fase 2).
-- Si el ms del archivo descargado coincide con el de la app. Se comprueba con
-  el inicio de un capítulo conocido (Fase 2).
-- El protocolo del login nativo (`auth/register`) y del refresh
-  (`auth/token`) (Fase 2).
+- Si el ms del archivo descargado coincide con el de la app (abrir el mismo
+  capítulo en ambos).
+- El login nativo (`auth/register`) con una cuenta real.
 - Si existe un endpoint de "marcar como terminado".
