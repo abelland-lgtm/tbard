@@ -117,9 +117,14 @@ No hace falta refrescar el `access_token` para la API de Audible.
 - Los capítulos de este libro sí traen títulos reales ("Capítulo 31: La
   Primera Noche"); Juramentada solo los trae genéricos.
 
+## Alineación con la app ✅ confirmado
+
+El ms global de tbard (`start_offset_ms` del capítulo + posición dentro de su
+archivo) coincide con el de la app del móvil: al mismo capítulo y minuto en
+tbard, la app muestra el mismo capítulo y minuto. La intro de marca está
+incluida en el archivo y en los offsets, así que no hace falta corregirla.
+
 ## Pendiente de verificar
 
-- Si el ms del archivo descargado coincide con el de la app (abrir el mismo
-  capítulo en ambos).
 - El login nativo (`auth/register`) con una cuenta real.
 - Si existe un endpoint de "marcar como terminado".
