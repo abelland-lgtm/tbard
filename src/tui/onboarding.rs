@@ -227,10 +227,10 @@ fn draw(f: &mut Frame, t: &Theme, step: &Step) {
 
     let keys: &[(&str, &str)] = match step {
         Step::Paste { .. } => {
-            &[(tr("sign in", "iniciar sesión"), "↵"), (tr("choose another store", "elegir otra tienda"), "ESC")]
+            &[(tr("sign in", "iniciar sesión"), "⏎"), (tr("choose another store", "elegir otra tienda"), "ESC")]
         }
         Step::Busy => &[],
-        _ => &[(tr("continue", "continuar"), "↵"), (tr("quit", "salir"), "ESC")],
+        _ => &[(tr("continue", "continuar"), "⏎"), (tr("quit", "salir"), "ESC")],
     };
     f.render_widget(Paragraph::new(actions(t, keys)), help);
 }

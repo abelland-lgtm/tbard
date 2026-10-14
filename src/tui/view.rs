@@ -217,13 +217,13 @@ fn sidebar(f: &mut Frame, app: &App, area: Rect) {
 fn footer(f: &mut Frame, app: &App, area: Rect) {
     let t = &app.theme;
     let keys: Vec<(&str, &str)> = match (&app.view, app.searching, app.editing.is_some()) {
-        (_, _, true) => vec![("↵", tr("Save", "Guardar")), ("ESC", tr("Cancel", "Cancelar"))],
-        (_, true, _) => vec![("↵", tr("Accept", "Aceptar")), ("ESC", tr("Clear", "Borrar"))],
+        (_, _, true) => vec![("⏎", tr("Save", "Guardar")), ("ESC", tr("Cancel", "Cancelar"))],
+        (_, true, _) => vec![("⏎", tr("Accept", "Aceptar")), ("ESC", tr("Clear", "Borrar"))],
         (View::Library, ..) => vec![
             ("/", tr("Search", "Buscar")),
             ("↑↓", tr("Move", "Navegar")),
             ("1-5", tr("Section", "Sección")),
-            ("↵", tr("Listen", "Escuchar")),
+            ("⏎", tr("Listen", "Escuchar")),
             ("D", tr("Download", "Descargar")),
             ("R", tr("Refresh", "Actualizar")),
             ("C", tr("Settings", "Config")),
@@ -243,11 +243,11 @@ fn footer(f: &mut Frame, app: &App, area: Rect) {
         ],
         (View::Settings, ..) => vec![
             ("↑↓", tr("Move", "Navegar")),
-            ("↵", tr("Change", "Cambiar")),
+            ("⏎", tr("Change", "Cambiar")),
             ("ESC", tr("Back", "Volver")),
             ("Q", tr("Quit", "Salir")),
         ],
-        (View::Language, ..) => vec![("↑↓", tr("Move", "Navegar")), ("↵", tr("Choose", "Elegir"))],
+        (View::Language, ..) => vec![("↑↓", tr("Move", "Navegar")), ("⏎", tr("Choose", "Elegir"))],
     };
     let mut spans = vec![Span::raw(" ")];
     for (k, label) in keys {
@@ -379,9 +379,9 @@ fn book_card(f: &mut Frame, app: &mut App, t: &Theme, b: &Book, area: Rect) {
     lines.push(Line::from(chips));
     lines.push(Line::from(""));
     let action = if b.path.is_some() {
-        tr("[↵] Listen", "[↵] Escuchar")
+        tr("[⏎] Listen", "[⏎] Escuchar")
     } else {
-        tr("[↵] Listen  [D] Download", "[↵] Escuchar  [D] Descargar")
+        tr("[⏎] Listen  [D] Download", "[⏎] Escuchar  [D] Descargar")
     };
     lines.push(Line::from(action).style(inv.bold()));
 
@@ -552,12 +552,12 @@ fn settings(f: &mut Frame, app: &App, area: Rect) {
     );
     let mut help_lines = vec![inspired, separator(t, help.width)];
     help_lines.extend(if app.editing.is_some() {
-        actions(t, &[(tr("save the folder", "guardar la carpeta"), "↵"), (tr("cancel", "cancelar"), "ESC")])
+        actions(t, &[(tr("save the folder", "guardar la carpeta"), "⏎"), (tr("cancel", "cancelar"), "ESC")])
     } else {
         actions(
             t,
             &[
-                (tr("change the selected option", "cambiar la opción elegida"), "↵"),
+                (tr("change the selected option", "cambiar la opción elegida"), "⏎"),
                 (tr("back to the library", "volver a la biblioteca"), "ESC"),
                 (tr("quit tbard", "salir de tbard"), "Q"),
             ],

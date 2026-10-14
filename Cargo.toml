@@ -52,6 +52,10 @@ tracing-subscriber = { version = "0.3.23", default-features = false, features = 
 tui-big-text = "0.8.10"
 url = "2.5.8"
 
+[features]
+# Demo library for screenshots (`TBARD_DEMO=1`); never enabled in releases.
+demo = []
+
 [profile.release]
 lto = "thin"
 strip = true

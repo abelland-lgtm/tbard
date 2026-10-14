@@ -1,6 +1,7 @@
 mod audible;
 mod config;
 mod db;
+mod demo;
 mod download;
 mod i18n;
 mod player;

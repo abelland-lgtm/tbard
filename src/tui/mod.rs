@@ -98,6 +98,8 @@ pub struct App {
     status: Option<(String, Instant)>,
     online: Option<bool>,
     quit: bool,
+    /// Demo mode (screenshots): no network; positions count as synced.
+    demo: bool,
 }
 
 pub async fn run(mut paths: Paths) -> Result<()> {
@@ -113,12 +115,13 @@ async fn start(terminal: &mut ratatui::DefaultTerminal, paths: &mut Paths) -> Re
     // query thread keeps reading stdin and swallows the first key press; acceptable.
     let picker = Picker::from_query_stdio().unwrap_or_else(|_| Picker::halfblocks());
     let theme = Theme::load(&paths.config.join("colors.toml"));
-    if !onboarding::run(terminal, paths, &theme).await? {
+    let demo = crate::demo::active();
+    if !demo && !onboarding::run(terminal, paths, &theme).await? {
         return Ok(());
     }
     let paths = paths.clone();
-    let client = Arc::new(Client::open(&paths.data)?);
     let db = Db::open(&paths.db())?;
+    let client = Arc::new(if demo { crate::demo::setup(&paths, &db)? } else { Client::open(&paths.data)? });
     let (tx, mut rx) = mpsc::unbounded_channel();
     let mut app = App {
         theme,
@@ -146,10 +149,11 @@ async fn start(terminal: &mut ratatui::DefaultTerminal, paths: &mut Paths) -> Re
         player: None,
         ask: None,
         status: None,
-        online: None,
+        online: if demo { Some(true) } else { None },
         quit: false,
+        demo,
     };
-    if app.client.protection != crate::secret::Protection::Keychain {
+    if !demo && app.client.protection != crate::secret::Protection::Keychain {
         app.say(tr(
             "no system keychain: credentials are stored unencrypted (readable only by your user)",
             "sin llavero del sistema: las credenciales se guardan sin cifrar (legibles solo por tu usuario)",
@@ -224,6 +228,9 @@ impl App {
     }
 
     fn refresh_library(&mut self) {
+        if self.demo {
+            return;
+        }
         let (client, tx) = (self.client.clone(), self.tx.clone());
         let db_path = self.paths.db();
         tokio::spawn(async move {
@@ -357,6 +364,10 @@ impl App {
 
     /// Sends the position without blocking the UI (the network may take up to 15 s).
     fn push_bg(&self, asin: String, acr: String, pos: i64) {
+        if self.demo {
+            let _ = self.tx.send(Msg::Pushed(true));
+            return;
+        }
         let (client, tx, db_path) = (self.client.clone(), self.tx.clone(), self.paths.db());
         tokio::spawn(async move {
             let ok = match Db::open(&db_path) {
@@ -409,6 +420,11 @@ impl App {
                 Lang::Es => format!("descargando «{}»; empezará al terminar", book.title),
             };
             self.say(msg);
+            return;
+        }
+        if self.demo {
+            let start = book.position_ms.unwrap_or(0);
+            let _ = self.tx.send(Msg::Start { asin, decision: Ok((Decision::Start(start), true)) });
             return;
         }
         self.say(tr("asking Audible for the last position…", "consultando la última posición en Audible…"));
@@ -466,7 +482,7 @@ impl App {
         let (last, finished) = p.session.finish();
         let _ = self.db.save_position(&p.session.asin, last, sync::now_ms());
         let _ = self.db.save_settings(&p.session.asin, p.settings);
-        let ok = sync::push(&self.client, &self.db, &p.session.asin, &p.session.acr, last).await;
+        let ok = self.demo || sync::push(&self.client, &self.db, &p.session.asin, &p.session.acr, last).await;
         self.online = Some(ok);
         self.say(format!(
             "{} «{}» {} {}{}",

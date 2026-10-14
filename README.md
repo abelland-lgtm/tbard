@@ -85,7 +85,7 @@ tbard logout                   # remove this device from Amazon and delete the c
 |---|---|---|---|
 | `/` | search | `space` | pause |
 | `1`–`5` | section | `←` `→` | ±30 s |
-| `↵` | listen | `[` `]` | previous / next chapter |
+| `⏎` | listen | `[` `]` | previous / next chapter |
 | `d` | download | `+` `-` | speed |
 | `r` | refresh | `9` `0` | volume |
 | `c` | settings | `t` | sleep timer |
