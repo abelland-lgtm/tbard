@@ -20,22 +20,36 @@ use time::{macros::format_description, OffsetDateTime};
 /// Bearer con `client-id: 0` para dispositivos registrados como iPhone.
 pub struct Client {
     pub http: reqwest::Client,
+    /// `https://api.audible.<tld>`; los tests lo apuntan a un servidor local.
+    base: String,
     auth: Auth,
     key: SigningKey<rsa::sha2::Sha256>,
 }
 
 impl Client {
     pub fn new(auth_path: PathBuf) -> Result<Self> {
-        let auth = Auth::load(&auth_path)?;
+        Self::from_auth(Auth::load(&auth_path)?)
+    }
+
+    pub fn from_auth(auth: Auth) -> Result<Self> {
         let key = RsaPrivateKey::from_pkcs1_pem(&auth.device_private_key).context("clave del dispositivo inválida")?;
         let http = reqwest::Client::builder().user_agent("Audible/3.56.2 iOS/15.0.0").build()?;
-        Ok(Self { http, auth, key: SigningKey::new(key) })
+        let base = format!("https://api.audible.{}", auth.tld());
+        Ok(Self { http, base, auth, key: SigningKey::new(key) })
     }
 
     pub fn auth(&self) -> &Auth {
         &self.auth
     }
 
+    #[cfg(test)]
+    pub fn with_base(mut self, base: &str) -> Self {
+        self.base = base.to_owned();
+        self
+    }
+
+    /// Reintenta los 5xx y 429 (dos veces, con espera creciente). Los errores de
+    /// red fallan enseguida: la cola de posiciones ya cubre el modo sin conexión.
     pub async fn request(
         &self,
         method: Method,
@@ -43,10 +57,37 @@ impl Client {
         query: &[(&str, &str)],
         body: Option<&Value>,
     ) -> Result<Value> {
+        let mut attempt = 0;
+        loop {
+            let (status, text) = self.send(method.clone(), path, query, body).await?;
+            let transient = status.is_server_error() || status == reqwest::StatusCode::TOO_MANY_REQUESTS;
+            if transient && attempt < 2 {
+                attempt += 1;
+                tracing::warn!("{method} {path}: {status}, reintento {attempt}");
+                tokio::time::sleep(std::time::Duration::from_secs(1 << attempt)).await;
+                continue;
+            }
+            if !status.is_success() {
+                bail!("{method} {path}: {status}: {text}");
+            }
+            // El PUT de posiciones responde 200 con cuerpo vacío.
+            return Ok(if text.trim().is_empty() { Value::Null } else { serde_json::from_str(&text)? });
+        }
+    }
+
+    async fn send(
+        &self,
+        method: Method,
+        path: &str,
+        query: &[(&str, &str)],
+        body: Option<&Value>,
+    ) -> Result<(reqwest::StatusCode, String)> {
         let mut req = self
             .http
-            .request(method.clone(), format!("https://api.audible.{}/{path}", self.auth.tld()))
-            .query(query);
+            .request(method.clone(), format!("{}/{path}", self.base))
+            .query(query)
+            // Sin red, que falle rápido y la posición vaya a la cola.
+            .timeout(std::time::Duration::from_secs(15));
         if let Some(body) = body {
             req = req.json(body);
         }
@@ -72,13 +113,7 @@ impl Client {
         h.insert("x-adp-signature", format!("{signature}:{date}").parse()?);
 
         let res = self.http.execute(req).await?;
-        let status = res.status();
-        let text = res.text().await?;
-        if !status.is_success() {
-            bail!("{method} {path}: {status}: {text}");
-        }
-        // El PUT de posiciones responde 200 con cuerpo vacío.
-        Ok(if text.trim().is_empty() { Value::Null } else { serde_json::from_str(&text)? })
+        Ok((res.status(), res.text().await?))
     }
 
     pub async fn get(&self, path: &str, query: &[(&str, &str)]) -> Result<Value> {

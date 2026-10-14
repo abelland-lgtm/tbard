@@ -36,11 +36,23 @@ pub fn decide(local: Option<LocalPos>, remote: Option<RemotePos>) -> Decision {
     }
 }
 
+/// Decide desde dónde empezar con la posición local y la de Audible. Sin red,
+/// usa la local.
+pub async fn start(client: &Client, db: &Db, asin: &str) -> Result<(Decision, bool)> {
+    let remote = positions::last(client, asin).await;
+    let online = remote.is_ok();
+    Ok((decide(db.position(asin)?, remote.ok().flatten()), online))
+}
+
 /// Envía una posición; si falla (sin red, etc.) queda en la cola.
 pub async fn push(client: &Client, db: &Db, asin: &str, acr: &str, position_ms: i64) -> bool {
     match positions::put(client, asin, acr, position_ms).await {
-        Ok(()) => db.mark_synced(asin, position_ms, now_ms()).is_ok(),
-        Err(_) => {
+        Ok(()) => {
+            tracing::info!("{asin}: posición {position_ms} enviada");
+            db.mark_synced(asin, position_ms, now_ms()).is_ok()
+        }
+        Err(e) => {
+            tracing::warn!("{asin}: no se pudo enviar {position_ms} ({e:#}); queda en cola");
             let _ = db.enqueue(asin, acr, position_ms);
             false
         }
@@ -94,5 +106,80 @@ mod tests {
         assert_eq!(decide(l(10 * min, 400_000, Some(100)), r(11 * min, 500_000)), Decision::Start(11 * min));
         // Nunca sincronizado y lejos: preguntar.
         assert_eq!(decide(l(30 * min, 2, None), r(0, 1)), Decision::Ask { local: 30 * min, remote: 0 });
+    }
+}
+
+/// Flujo completo contra un servidor HTTP local: sin red se encola, con red se
+/// vacía la cola y la petición va firmada.
+#[cfg(test)]
+mod flow_tests {
+    use super::*;
+    use crate::audible::auth::{Auth, CustomerInfo, DeviceInfo};
+    use rsa::pkcs1::{EncodeRsaPrivateKey, LineEnding};
+    use std::sync::{Arc, Mutex};
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpListener,
+    };
+
+    fn client(base: &str) -> Client {
+        let key = rsa::RsaPrivateKey::new(&mut rsa::rand_core::OsRng, 1024).unwrap();
+        let auth = Auth {
+            access_token: String::new(),
+            refresh_token: String::new(),
+            adp_token: "ADP".into(),
+            device_private_key: key.to_pkcs1_pem(LineEnding::LF).unwrap().to_string(),
+            expires: 0.0,
+            locale_code: "us".into(),
+            device_info: DeviceInfo {
+                device_serial_number: "S".into(),
+                device_type: "T".into(),
+                device_name: String::new(),
+            },
+            customer_info: CustomerInfo { user_id: "U".into(), name: String::new() },
+        };
+        Client::from_auth(auth).unwrap().with_base(base)
+    }
+
+    /// Responde 200 vacío a todo y guarda las peticiones recibidas.
+    async fn server() -> (String, Arc<Mutex<Vec<String>>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let log = seen.clone();
+        tokio::spawn(async move {
+            while let Ok((mut sock, _)) = listener.accept().await {
+                // Cabeceras y cuerpo pueden llegar en lecturas distintas.
+                let mut req = Vec::new();
+                let mut buf = [0u8; 4096];
+                while let Ok(Ok(n @ 1..)) =
+                    tokio::time::timeout(std::time::Duration::from_millis(100), sock.read(&mut buf)).await
+                {
+                    req.extend_from_slice(&buf[..n]);
+                }
+                log.lock().unwrap().push(String::from_utf8_lossy(&req).into_owned());
+                let _ = sock.write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\nconnection: close\r\n\r\n").await;
+            }
+        });
+        (base, seen)
+    }
+
+    #[tokio::test]
+    async fn offline_queues_then_flush_sends_signed() {
+        let db = Db::memory().unwrap();
+        // Puerto 1 cerrado: equivale a no tener red.
+        assert!(!push(&client("http://127.0.0.1:1"), &db, "A", "acr", 42_000).await);
+        assert_eq!(db.pending().unwrap().len(), 1);
+
+        let (base, seen) = server().await;
+        assert_eq!(flush(&client(&base), &db).await.unwrap(), 0);
+        assert!(db.pending().unwrap().is_empty());
+        assert_eq!(db.position("A").unwrap().unwrap().position_ms, 42_000);
+
+        let req = seen.lock().unwrap().join("\n").to_lowercase();
+        assert!(req.starts_with("put /1.0/lastpositions/a "), "{req}");
+        assert!(req.contains("x-adp-token: adp"));
+        assert!(req.contains("x-adp-signature: "));
+        assert!(req.contains("\"position_ms\":42000"));
     }
 }

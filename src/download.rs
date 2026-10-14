@@ -1,4 +1,7 @@
-use crate::audible::{client::Client, content::Chapter};
+use crate::{
+    audible::{client::Client, content, content::Chapter},
+    db::Book,
+};
 use anyhow::{bail, Context, Result};
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -16,8 +19,23 @@ pub struct ChapterFile {
 
 pub const INDEX: &str = "chapters.json";
 
-/// Descarga `url` en `dest`, reanudando desde un `dest.part` previo.
+/// Descarga `url` en `dest`. Si la conexión se corta, reintenta hasta 5 veces
+/// continuando desde lo ya bajado en `dest.part`.
 pub async fn fetch(client: &Client, url: &str, dest: &Path, mut progress: impl FnMut(u64, u64)) -> Result<()> {
+    let mut attempt = 0;
+    loop {
+        match fetch_once(client, url, dest, &mut progress).await {
+            Err(e) if attempt < 5 => {
+                attempt += 1;
+                tracing::warn!("descarga de {} interrumpida ({e:#}), reintento {attempt}", dest.display());
+                tokio::time::sleep(std::time::Duration::from_secs(2 * attempt)).await;
+            }
+            res => return res,
+        }
+    }
+}
+
+async fn fetch_once(client: &Client, url: &str, dest: &Path, progress: &mut impl FnMut(u64, u64)) -> Result<()> {
     if fs::try_exists(dest).await? {
         return Ok(());
     }
@@ -53,6 +71,43 @@ pub async fn fetch(client: &Client, url: &str, dest: &Path, mut progress: impl F
     Ok(())
 }
 
+pub enum Progress {
+    Audio { done: u64, total: u64 },
+    Splitting { done: usize, total: usize },
+}
+
+pub struct Downloaded {
+    pub dir: PathBuf,
+    pub acr: String,
+    pub content_format: String,
+}
+
+/// Descarga un libro en máxima calidad y lo divide por capítulos en
+/// `<biblioteca>/<autor>/<título>`.
+pub async fn book(client: &Client, library: &Path, book: &Book, mut progress: impl FnMut(Progress)) -> Result<Downloaded> {
+    let lic = content::license(client, &book.asin).await?;
+    let dir = book_dir(library, &book.authors, &book.title);
+    fs::create_dir_all(&dir).await?;
+
+    let cover = match &book.cover_url {
+        Some(url) => {
+            let path = dir.join("cover.jpg");
+            fetch(client, url, &path, |_, _| {}).await.ok().map(|_| path)
+        }
+        None => None,
+    };
+    let aaxc = dir.join(format!("{}.aaxc", book.asin));
+    fetch(client, &lic.offline_url, &aaxc, |done, total| progress(Progress::Audio { done, total })).await?;
+    let tags = Tags { album: &book.title, artist: &book.authors };
+    split(&aaxc, Some((&lic.key, &lic.iv)), &lic.chapters, cover.as_deref(), &tags, &dir, |done, total| {
+        progress(Progress::Splitting { done, total })
+    })
+    .await?;
+    // Solo se borra el AAXC cuando todos los capítulos están listos.
+    fs::remove_file(&aaxc).await?;
+    Ok(Downloaded { dir, acr: lic.acr, content_format: lic.content_format })
+}
+
 pub struct Tags<'a> {
     pub album: &'a str,
     pub artist: &'a str,
@@ -67,6 +122,7 @@ pub async fn split(
     cover: Option<&Path>,
     tags: &Tags<'_>,
     out_dir: &Path,
+    mut on_chapter: impl FnMut(usize, usize),
 ) -> Result<Vec<ChapterFile>> {
     fs::create_dir_all(out_dir).await?;
     let total = chapters.len();
@@ -96,6 +152,7 @@ pub async fn split(
             bail!("ffmpeg falló en «{}»: {}", ch.title, String::from_utf8_lossy(&out.stderr));
         }
         files.push(ChapterFile { file, title: ch.title.clone(), start_ms: ch.start_ms, length_ms: ch.length_ms });
+        on_chapter(i + 1, total);
     }
     fs::write(out_dir.join(INDEX), serde_json::to_vec_pretty(&files)?).await?;
     Ok(files)
@@ -162,7 +219,9 @@ mod tests {
         ];
         let out = dir.join("out");
         let files =
-            split(&src, None, &chapters, None, &Tags { album: "Libro", artist: "Autora" }, &out).await.unwrap();
+            split(&src, None, &chapters, None, &Tags { album: "Libro", artist: "Autora" }, &out, |_, _| {})
+                .await
+                .unwrap();
         assert_eq!(load_index(&out).await.unwrap(), files);
 
         for (f, ch) in files.iter().zip(&chapters) {

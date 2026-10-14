@@ -3,10 +3,12 @@ mod config;
 mod db;
 mod download;
 mod player;
+mod session;
 mod sync;
+mod tui;
 
 use anyhow::{bail, Context, Result};
-use audible::{client::Client, content, library, login, positions};
+use audible::{client::Client, library, login};
 use clap::{Parser, Subcommand};
 use config::Paths;
 use db::{Book, Db};
@@ -18,10 +20,10 @@ use std::{
 use sync::Decision;
 
 #[derive(Parser)]
-#[command(version, about = "Audible desde la terminal")]
+#[command(version, about = "Audible desde la terminal (sin argumentos abre la TUI)")]
 struct Cli {
     #[command(subcommand)]
-    cmd: Cmd,
+    cmd: Option<Cmd>,
 }
 
 #[derive(Subcommand)]
@@ -37,52 +39,43 @@ enum Cmd {
     },
     /// Actualiza y muestra la biblioteca.
     Library,
+    /// Descarga en máxima calidad, dividido por capítulos, sin reproducir.
+    Download { query: Vec<String> },
     /// Descarga si hace falta y reproduce, sincronizando la posición con Audible.
     Play {
         /// Parte del título, autor o serie.
-        query: Vec<String>,
-    },
-    /// Descarga en máxima calidad, dividido por capítulos, sin reproducir.
-    Download {
         query: Vec<String>,
     },
     /// Envía las posiciones pendientes.
     Sync,
 }
 
-/// Cada cuánto se guarda en local y se envía a Audible durante la reproducción.
-const SAVE_EVERY: Duration = Duration::from_secs(5);
-const PUSH_EVERY: Duration = Duration::from_secs(120);
-/// A menos de esto del final, el libro se marca como terminado.
-const FINISH_MARGIN_MS: i64 = 30_000;
-
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
     let paths = Paths::new()?;
+    init_log(&paths)?;
     match cli.cmd {
-        Cmd::Login { locale, import } => cmd_login(&paths, &locale, import).await,
-        Cmd::Library => {
-            let (client, mut db) = open(&paths)?;
-            refresh(&client, &mut db).await?;
+        None => tui::run(paths).await,
+        Some(Cmd::Login { locale, import }) => cmd_login(&paths, &locale, import).await,
+        Some(Cmd::Library) => {
+            let (client, db) = open(&paths)?;
+            refresh(&client, &db).await?;
             for b in db.search("")? {
                 let mark = if b.path.is_some() { "●" } else { " " };
                 println!("{mark} {} — {} [{}]", b.title, b.authors, hms(b.runtime_ms));
             }
             Ok(())
         }
-        Cmd::Play { query } => cmd_play(&paths, &query.join(" ")).await,
-        Cmd::Download { query } => {
-            let (client, mut db) = open(&paths)?;
-            if db.is_empty()? {
-                refresh(&client, &mut db).await?;
-            }
-            let book = pick(db.search(&query.join(" "))?)?;
-            let (dir, _) = download_book(&client, &db, &paths, &book).await?;
+        Some(Cmd::Download { query }) => {
+            let (client, db) = open(&paths)?;
+            let book = find(&client, &db, &query.join(" ")).await?;
+            let dir = download(&client, &db, &paths, &book).await?.0;
             println!("Listo: {}", dir.display());
             Ok(())
         }
-        Cmd::Sync => {
+        Some(Cmd::Play { query }) => cmd_play(&paths, &query.join(" ")).await,
+        Some(Cmd::Sync) => {
             let (client, db) = open(&paths)?;
             let left = sync::flush(&client, &db).await?;
             println!("pendientes: {left}");
@@ -91,12 +84,32 @@ async fn main() -> Result<()> {
     }
 }
 
+/// Log a archivo (nunca a la terminal: la TUI la ocupa). Nivel con `TBARD_LOG`.
+fn init_log(paths: &Paths) -> Result<()> {
+    let file = std::fs::OpenOptions::new().create(true).append(true).open(&paths.log)?;
+    tracing_subscriber::fmt()
+        .with_writer(std::sync::Mutex::new(file))
+        .with_ansi(false)
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_env("TBARD_LOG").unwrap_or_else(|_| "tbard=info".into()),
+        )
+        .init();
+    Ok(())
+}
+
 fn open(paths: &Paths) -> Result<(Client, Db)> {
     Ok((Client::new(paths.auth())?, Db::open(&paths.db())?))
 }
 
-async fn refresh(client: &Client, db: &mut Db) -> Result<()> {
+async fn refresh(client: &Client, db: &Db) -> Result<()> {
     db.upsert_books(&library::fetch(client).await?)
+}
+
+async fn find(client: &Client, db: &Db, query: &str) -> Result<Book> {
+    if db.is_empty()? {
+        refresh(client, db).await?;
+    }
+    pick(db.search(query)?)
 }
 
 async fn cmd_login(paths: &Paths, locale: &str, import: Option<PathBuf>) -> Result<()> {
@@ -116,29 +129,21 @@ async fn cmd_login(paths: &Paths, locale: &str, import: Option<PathBuf>) -> Resu
 }
 
 async fn cmd_play(paths: &Paths, query: &str) -> Result<()> {
-    let (client, mut db) = open(paths)?;
+    let (client, db) = open(paths)?;
     // Sin red no pasa nada: quedan en la cola.
     let _ = sync::flush(&client, &db).await;
-    if db.is_empty()? {
-        refresh(&client, &mut db).await?;
-    }
-    let book = pick(db.search(query)?)?;
-
+    let book = find(&client, &db, query).await?;
     let (dir, acr) = match (&book.path, &book.acr) {
         (Some(dir), Some(acr)) => (dir.clone(), acr.clone()),
-        _ => download_book(&client, &db, paths, &book).await?,
+        _ => download(&client, &db, paths, &book).await?,
     };
     let files = download::load_index(&dir).await?;
-    let end_ms = files.last().map_or(0, |f| f.start_ms + f.length_ms);
 
-    let remote = match positions::last(&client, &book.asin).await {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("sin conexión con Audible ({e}); uso la posición local");
-            None
-        }
-    };
-    let start = match sync::decide(db.position(&book.asin)?, remote) {
+    let (decision, online) = sync::start(&client, &db, &book.asin).await?;
+    if !online {
+        eprintln!("sin conexión con Audible; uso la posición local");
+    }
+    let start = match decision {
         Decision::Start(ms) => ms,
         Decision::Ask { local, remote } => {
             let ans = prompt(&format!("Posición local {} / Audible {}. ¿Cuál uso? [l/A] ", hms(local), hms(remote)))?;
@@ -152,36 +157,32 @@ async fn cmd_play(paths: &Paths, query: &str) -> Result<()> {
         while tokio::signal::ctrl_c().await.is_ok() {}
     });
 
+    let settings = db.settings(&book.asin)?;
+    let opts = player::Options { terminal: true, speed: settings.speed, volume: settings.volume };
     let socket = paths.runtime.join(format!("tbard-{}.sock", std::process::id()));
-    let mut mpv = player::Mpv::spawn(&socket, &dir, &files, start).await?;
-    let (mut pos, mut pushed) = (start, start);
-    let (mut last_save, mut last_push) = (Instant::now(), Instant::now());
-    let mut was_paused = false;
+    let mut mpv = player::Mpv::spawn(&socket, &dir, &files, start, &opts).await?;
+    let mut s = session::Session::new(book.asin.clone(), acr, files, start, Instant::now());
     loop {
         tokio::time::sleep(Duration::from_secs(1)).await;
         if mpv.exited() {
             break;
         }
         // Entre capítulos time-pos no está disponible un instante.
-        let Ok(p) = mpv.position(&files).await else { continue };
-        pos = p;
+        let Ok(pos) = mpv.position(&s.files).await else { continue };
         let paused = mpv.paused().await.unwrap_or(false);
-        if last_save.elapsed() >= SAVE_EVERY {
-            db.save_position(&book.asin, pos, sync::now_ms())?;
-            last_save = Instant::now();
+        let act = s.update(pos, paused, Instant::now());
+        if act.save {
+            db.save_position(&s.asin, pos, sync::now_ms())?;
         }
-        if pos != pushed && ((paused && !was_paused) || last_push.elapsed() >= PUSH_EVERY) {
-            sync::push(&client, &db, &book.asin, &acr, pos).await;
-            (pushed, last_push) = (pos, Instant::now());
+        if let Some(p) = act.push {
+            sync::push(&client, &db, &s.asin, &s.acr, p).await;
         }
-        was_paused = paused;
     }
     let _ = std::fs::remove_file(&socket);
 
-    let finished = end_ms > 0 && pos >= end_ms - FINISH_MARGIN_MS;
-    let last = if finished { end_ms } else { pos };
-    db.save_position(&book.asin, last, sync::now_ms())?;
-    let sent = sync::push(&client, &db, &book.asin, &acr, last).await;
+    let (last, finished) = s.finish();
+    db.save_position(&s.asin, last, sync::now_ms())?;
+    let sent = sync::push(&client, &db, &s.asin, &s.acr, last).await;
     println!(
         "■ {} en {}{}",
         if finished { "Terminado" } else { "Pausado" },
@@ -191,37 +192,27 @@ async fn cmd_play(paths: &Paths, query: &str) -> Result<()> {
     Ok(())
 }
 
-/// Descarga en máxima calidad y divide por capítulos. Devuelve (carpeta, acr).
-async fn download_book(client: &Client, db: &Db, paths: &Paths, book: &Book) -> Result<(PathBuf, String)> {
-    let lic = content::license(client, &book.asin).await?;
-    let dir = download::book_dir(&paths.library, &book.authors, &book.title);
-    tokio::fs::create_dir_all(&dir).await?;
-    println!("Descargando «{}» ({}) en {}", book.title, lic.content_format, dir.display());
-
-    let cover = match &book.cover_url {
-        Some(url) => {
-            let path = dir.join("cover.jpg");
-            download::fetch(client, url, &path, |_, _| {}).await.ok().map(|_| path)
-        }
-        None => None,
-    };
-    let aaxc = dir.join(format!("{}.aaxc", book.asin));
-    let mut last_pct = u64::MAX;
-    download::fetch(client, &lic.offline_url, &aaxc, |done, total| {
-        let pct = done * 100 / total.max(1);
-        if pct != last_pct {
-            last_pct = pct;
-            eprint!("\r  audio: {pct}% ({} / {} MB)", done >> 20, total >> 20);
+/// Descarga con progreso en la terminal. Devuelve (carpeta, acr).
+async fn download(client: &Client, db: &Db, paths: &Paths, book: &Book) -> Result<(PathBuf, String)> {
+    println!("Descargando «{}»…", book.title);
+    let mut last = None;
+    let d = download::book(client, &paths.library, book, |p| {
+        let line = match p {
+            download::Progress::Audio { done, total } => {
+                format!("audio: {}% ({} / {} MB)", done * 100 / total.max(1), done >> 20, total >> 20)
+            }
+            download::Progress::Splitting { done, total } => format!("capítulos: {done}/{total}"),
+        };
+        if last.as_ref() != Some(&line) {
+            eprint!("\r  {line}\x1b[K");
+            last = Some(line);
         }
     })
     .await?;
-    eprintln!("\n  dividiendo en {} capítulos…", lic.chapters.len());
-    let tags = download::Tags { album: &book.title, artist: &book.authors };
-    download::split(&aaxc, Some((&lic.key, &lic.iv)), &lic.chapters, cover.as_deref(), &tags, &dir).await?;
-    // Solo se borra el AAXC cuando todos los capítulos están listos.
-    tokio::fs::remove_file(&aaxc).await?;
-    db.set_downloaded(&book.asin, &dir, &lic.acr, &lic.content_format)?;
-    Ok((dir, lic.acr))
+    eprintln!();
+    db.set_downloaded(&book.asin, &d.dir, &d.acr, &d.content_format)?;
+    println!("{} en {}", d.content_format, d.dir.display());
+    Ok((d.dir, d.acr))
 }
 
 fn pick(mut books: Vec<Book>) -> Result<Book> {
@@ -249,7 +240,7 @@ fn prompt(msg: &str) -> Result<String> {
     Ok(line)
 }
 
-fn hms(ms: i64) -> String {
-    let s = ms / 1000;
+pub fn hms(ms: i64) -> String {
+    let s = ms.max(0) / 1000;
     format!("{}:{:02}:{:02}", s / 3600, s / 60 % 60, s % 60)
 }

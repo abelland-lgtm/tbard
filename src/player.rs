@@ -1,7 +1,7 @@
 use crate::download::ChapterFile;
 use anyhow::{bail, Context, Result};
 use serde_json::{json, Value};
-use std::{path::Path, time::Duration};
+use std::{path::Path, process::Stdio, time::Duration};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::{
@@ -10,6 +10,14 @@ use tokio::{
     },
     process::{Child, Command},
 };
+
+/// Cómo se lanza mpv.
+pub struct Options {
+    /// La CLI le deja la terminal a mpv; la TUI no.
+    pub terminal: bool,
+    pub speed: f64,
+    pub volume: i64,
+}
 
 /// mpv controlado por su socket IPC (JSON por líneas).
 pub struct Mpv {
@@ -21,13 +29,18 @@ pub struct Mpv {
 
 impl Mpv {
     /// Lanza mpv con los capítulos como playlist, empezando en `start_ms` del libro.
-    pub async fn spawn(socket: &Path, dir: &Path, files: &[ChapterFile], start_ms: i64) -> Result<Self> {
+    pub async fn spawn(socket: &Path, dir: &Path, files: &[ChapterFile], start_ms: i64, opts: &Options) -> Result<Self> {
         let (idx, offset_ms) = locate(files, start_ms);
         let _ = std::fs::remove_file(socket);
         let mut cmd = Command::new("mpv");
         cmd.args(["--no-video", "--force-window=no", "--idle=no"])
             .arg(format!("--input-ipc-server={}", socket.display()))
-            .arg(format!("--playlist-start={idx}"));
+            .arg(format!("--playlist-start={idx}"))
+            .arg(format!("--speed={}", opts.speed))
+            .arg(format!("--volume={}", opts.volume));
+        if !opts.terminal {
+            cmd.arg("--no-terminal").stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+        }
         for (i, f) in files.iter().enumerate() {
             if i == idx {
                 // --start solo para el primer archivo: entre --{ y --} es opción por archivo.
@@ -92,6 +105,36 @@ impl Mpv {
 
     pub async fn paused(&mut self) -> Result<bool> {
         Ok(self.get("pause").await?.as_bool().unwrap_or(false))
+    }
+
+    pub async fn set(&mut self, prop: &str, value: Value) -> Result<()> {
+        self.command(json!(["set_property", prop, value])).await.map(drop)
+    }
+
+    pub async fn toggle_pause(&mut self) -> Result<()> {
+        self.command(json!(["cycle", "pause"])).await.map(drop)
+    }
+
+    pub async fn quit(&mut self) -> Result<()> {
+        self.command(json!(["quit"])).await.map(drop)
+    }
+
+    /// Salta a una posición del libro, cambiando de capítulo si hace falta.
+    pub async fn seek_to(&mut self, files: &[ChapterFile], pos_ms: i64) -> Result<()> {
+        let end = files.last().map_or(0, |f| f.start_ms + f.length_ms);
+        let (idx, offset) = locate(files, pos_ms.clamp(0, (end - 1000).max(0)));
+        let secs = offset as f64 / 1000.0;
+        if self.get("playlist-pos").await?.as_i64() != Some(idx as i64) {
+            self.command(json!(["playlist-play-index", idx])).await?;
+            // El seek solo vale cuando el archivo nuevo ya cargó.
+            for _ in 0..40 {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                if self.get("playlist-pos").await?.as_i64() == Some(idx as i64) && self.get("time-pos").await.is_ok() {
+                    break;
+                }
+            }
+        }
+        self.command(json!(["seek", secs, "absolute"])).await.map(drop)
     }
 
     pub fn exited(&mut self) -> bool {
