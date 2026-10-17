@@ -11,7 +11,7 @@ homepage = "https://abelland-lgtm.github.io/tbard/"
 readme = "README.md"
 keywords = ["audible", "audiobooks", "tui", "terminal", "mpv"]
 categories = ["command-line-utilities", "multimedia::audio"]
-exclude = ["/examples", "/nix", "/noctalia", "/packaging", "/.github", "/flake.*", "/.envrc"]
+exclude = ["/examples", "/nix", "/noctalia", "/packaging", "/.github", "/flake.*", "/.envrc", "/scripts"]
 
 [package.metadata.wix]
 upgrade-guid = "DCD5D99C-36BA-4E6A-BF2A-F53B063DD08F"

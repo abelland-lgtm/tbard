@@ -205,7 +205,9 @@ nix flake check
 ```
 
 [`docs/audible-api.md`](docs/audible-api.md) documents the Audible API as
-tbard uses it.
+tbard uses it. `scripts/stats.sh` shows download counts per release and
+platform, crates.io downloads and repository traffic (traffic needs the
+owner's `gh` login).
 
 ## Inspiration and thanks
 
